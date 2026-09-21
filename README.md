@@ -59,19 +59,34 @@ open the prize picker:
   ticket counts below). Once a prize hits zero it drops out of the picker, the queue,
   and Mystery Prize's pool, same as a ticket-pool entrant hitting zero entries.
 - Spinning always has something to resolve to. In order:
-  1. **Prize Queue** — a fixed, pre-set sequence of prizes, revealed in advance. Click
-     the small "add to queue" icon on any prize card to append it; the Prize Queue
-     section below the grid lists the order, and each entry can be reordered or
-     removed. Every spin claims and pops the front of the queue; once it's empty,
-     spins fall back to whatever's set below.
+  1. **Prize Queue** — a fixed, pre-set sequence, revealed in advance. Click the small
+     "add to queue" icon on any prize card (or the Mystery Prize tile itself) to
+     append it; the Prize Queue section below the grid lists the order, and each
+     entry can be reordered or removed. Every spin claims and pops the front of the
+     queue; once it's empty, spins fall back to whatever's set below.
+     - A queue entry can itself be a **queued Mystery slot** — added from the Mystery
+       Prize tile — which draws randomly *when its turn comes up*, same secrecy as
+       the default, just at a pre-planned position in the sequence instead of
+       whenever the queue runs out.
   2. **A specific prize**, selected by clicking its card — every win from that point
      is recorded against it until you pick something else. Selecting a specific
      prize (or Mystery) clears any queue.
   3. **Mystery Prize** — the default when neither of the above is set. The server
-     randomly draws from the in-stock catalogue *at spin time*; nobody, not even
-     you, knows which one until the winner's revealed alongside it.
+     randomly draws from the in-stock, mystery-eligible catalogue *at spin time*;
+     nobody, not even you, knows which one until the winner's revealed alongside it.
   Spin is never blocked waiting on a prize choice — with no prizes in the catalogue
   at all, a spin simply has no prize to award.
+- **Mystery-eligible**: each prize card has a small dice/eye-off toggle to exclude it
+  from random Mystery draws (both the default and any queued Mystery slot) while
+  keeping it in the catalogue — handy for a big-ticket prize you want to keep in
+  reserve for a specific moment rather than risk it coming up early on a random pick.
+  It's still selectable by name, or placed directly in the queue, either way.
+- **Reserved stock stays reserved**: a prize placed specifically in the queue (not as
+  a Mystery slot) has that unit set aside for its own turn — an earlier queued Mystery
+  slot will never draw it if doing so would leave nothing for its dedicated slot
+  later. If a Mystery slot's draw comes up with nothing eligible left to give
+  (everything's either reserved ahead or excluded), that spin just awards no prize
+  rather than dipping into stock that's spoken for.
 - Deleting a prize removes its icon file, drops it from the queue if it was in one,
   and leaves past history entries intact (they keep a snapshot of the prize name at
   the time of the win).

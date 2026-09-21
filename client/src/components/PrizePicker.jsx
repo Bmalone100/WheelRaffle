@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ChevronDown, ChevronUp, Dices, ImageUp, ListOrdered, ListPlus, Plus, Trash2, X } from 'lucide-react';
+import { ChevronDown, ChevronUp, Dices, EyeOff, ImageUp, ListOrdered, ListPlus, Plus, Trash2, X } from 'lucide-react';
 import FilePicker from './FilePicker.jsx';
 
 export default function PrizePicker({
@@ -13,6 +13,7 @@ export default function PrizePicker({
   onSetQueue,
   onAdd,
   onDelete,
+  onSetMysteryEligible,
 }) {
   const [name, setName] = useState('');
   const [quantity, setQuantity] = useState('1');
@@ -24,6 +25,7 @@ export default function PrizePicker({
   if (!open) return null;
 
   const noQueue = prizeQueue.length === 0;
+  const mysteryQueuedCount = prizeQueue.filter((id) => id === null).length;
 
   const handleAddToQueue = (id) => onSetQueue([...prizeQueue, id]);
   const handleRemoveFromQueue = (index) => onSetQueue(prizeQueue.filter((_, i) => i !== index));
@@ -87,10 +89,23 @@ export default function PrizePicker({
                   <Dices size={32} />
                 </span>
                 <span className="prize-card-name">Mystery Prize</span>
+                {mysteryQueuedCount > 0 && (
+                  <span className="prize-card-queued-badge">In queue ×{mysteryQueuedCount}</span>
+                )}
+              </button>
+              <button
+                type="button"
+                className="prize-card-queue-add"
+                onClick={() => handleAddToQueue(null)}
+                aria-label="Add a Mystery Prize slot to the prize queue"
+                title="Add to queue"
+              >
+                <ListPlus size={14} />
               </button>
             </div>
             {prizes.map((p) => {
               const queuedCount = prizeQueue.filter((id) => id === p.id).length;
+              const eligible = p.mysteryEligible !== false;
               return (
                 <div key={p.id} className={`prize-card ${noQueue && p.id === currentPrizeId ? 'selected' : ''}`}>
                   <button type="button" className="prize-card-select" onClick={() => onSelect(p.id)}>
@@ -100,6 +115,19 @@ export default function PrizePicker({
                     </span>
                     <span className="prize-card-name">{p.name}</span>
                     {queuedCount > 0 && <span className="prize-card-queued-badge">In queue ×{queuedCount}</span>}
+                  </button>
+                  <button
+                    type="button"
+                    className={`prize-card-mystery-toggle ${eligible ? 'eligible' : 'excluded'}`}
+                    onClick={() => onSetMysteryEligible(p.id, !eligible)}
+                    aria-label={
+                      eligible
+                        ? `Exclude ${p.name} from Mystery Prize draws`
+                        : `Allow ${p.name} in Mystery Prize draws`
+                    }
+                    title={eligible ? 'Eligible for Mystery draws — click to exclude' : 'Excluded from Mystery draws — click to allow'}
+                  >
+                    {eligible ? <Dices size={12} /> : <EyeOff size={12} />}
                   </button>
                   <button
                     type="button"
@@ -142,12 +170,20 @@ export default function PrizePicker({
           ) : (
             <ol className="prize-queue-list">
               {prizeQueue.map((id, index) => {
-                const p = prizes.find((prize) => prize.id === id);
-                if (!p) return null;
+                const isMystery = id === null;
+                const p = isMystery ? null : prizes.find((prize) => prize.id === id);
+                if (!isMystery && !p) return null;
+                const itemLabel = isMystery ? 'Mystery Prize' : p.name;
                 return (
-                  <li key={`${id}-${index}`} className="prize-queue-item">
-                    <img src={p.imageUrl} alt="" className="prize-queue-item-icon" />
-                    <span className="prize-queue-item-name">{p.name}</span>
+                  <li key={`${id ?? 'mystery'}-${index}`} className="prize-queue-item">
+                    {isMystery ? (
+                      <span className="prize-queue-item-icon prize-queue-item-icon-mystery">
+                        <Dices size={16} />
+                      </span>
+                    ) : (
+                      <img src={p.imageUrl} alt="" className="prize-queue-item-icon" />
+                    )}
+                    <span className="prize-queue-item-name">{itemLabel}</span>
                     <span className="prize-queue-item-controls">
                       <button
                         type="button"
@@ -171,7 +207,7 @@ export default function PrizePicker({
                         type="button"
                         className="icon-button icon-button-small"
                         onClick={() => handleRemoveFromQueue(index)}
-                        aria-label={`Remove ${p.name} from queue`}
+                        aria-label={`Remove ${itemLabel} from queue`}
                       >
                         <X size={14} />
                       </button>

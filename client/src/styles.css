@@ -707,6 +707,31 @@ body {
   padding: 1px 8px;
 }
 
+.prize-card-mystery-toggle {
+  position: absolute;
+  bottom: 2px;
+  left: 2px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+}
+
+.prize-card-mystery-toggle.eligible {
+  background: var(--wheat-light);
+  color: var(--heather);
+}
+
+.prize-card-mystery-toggle.excluded {
+  background: rgba(255, 255, 255, 0.9);
+  color: #9c8fa8;
+}
+
 .prize-queue-section {
   border-top: 1px solid var(--wheat-light);
   padding-top: 16px;
@@ -773,6 +798,14 @@ body {
   border-radius: 8px;
   object-fit: cover;
   flex-shrink: 0;
+}
+
+.prize-queue-item-icon-mystery {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--heather);
+  color: var(--wheat-light);
 }
 
 .prize-queue-item-name {

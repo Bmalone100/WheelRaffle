@@ -17,6 +17,7 @@ import {
   loadEntrants,
   resetRaffle,
   setCurrentPrize,
+  setPrizeMysteryEligible,
   setPrizeQueue,
   spin,
 } from './api.js';
@@ -200,6 +201,16 @@ export default function App() {
     setPrizes((prev) => [...prev, prize]);
   }, []);
 
+  const handleSetMysteryEligible = useCallback(async (id, mysteryEligible) => {
+    setError('');
+    try {
+      const updated = await setPrizeMysteryEligible(id, mysteryEligible);
+      setPrizes((prev) => prev.map((p) => (p.id === id ? updated : p)));
+    } catch (e) {
+      setError(e.message);
+    }
+  }, []);
+
   const handleDeletePrize = useCallback(
     async (id) => {
       try {
@@ -228,8 +239,14 @@ export default function App() {
   }, []);
 
   const totalTickets = pool.reduce((sum, e) => sum + e.entries, 0);
-  const queueNextPrize = prizeQueue.length > 0 ? prizes.find((p) => p.id === prizeQueue[0]) || null : null;
-  const currentPrize = queueNextPrize || prizes.find((p) => p.id === currentPrizeId) || null;
+  // The queue's front entry is `null` for a queued Mystery slot — same as
+  // no prize armed at all, the badge just shows Mystery (never revealing
+  // which one ahead of time).
+  const inQueue = prizeQueue.length > 0;
+  const queueFrontId = inQueue ? prizeQueue[0] : null;
+  const currentPrize = inQueue
+    ? (queueFrontId && prizes.find((p) => p.id === queueFrontId)) || null
+    : prizes.find((p) => p.id === currentPrizeId) || null;
 
   let mainContent;
   if (loading) {
@@ -346,7 +363,7 @@ export default function App() {
 
       <PrizeBadge
         currentPrize={currentPrize}
-        queued={queueNextPrize != null}
+        queued={inQueue}
         queueLength={prizeQueue.length}
         onClick={() => setPrizePickerOpen(true)}
       />
@@ -368,6 +385,7 @@ export default function App() {
         onSetQueue={handleSetQueue}
         onAdd={handleAddPrize}
         onDelete={handleDeletePrize}
+        onSetMysteryEligible={handleSetMysteryEligible}
       />
 
       <WinnerHistory history={history} />

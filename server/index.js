@@ -123,11 +123,18 @@ function appendSpinLog(entry) {
 
 function loadPrizes() {
   if (!fs.existsSync(PRIZES_META_PATH)) return [];
+  let loaded;
   try {
-    return JSON.parse(fs.readFileSync(PRIZES_META_PATH, 'utf-8'));
+    loaded = JSON.parse(fs.readFileSync(PRIZES_META_PATH, 'utf-8'));
   } catch {
     return [];
   }
+  // Prizes saved before the mystery-eligibility flag existed default to
+  // eligible, so nothing already in play silently drops out of the pool.
+  loaded.forEach((p) => {
+    if (typeof p.mysteryEligible !== 'boolean') p.mysteryEligible = true;
+  });
+  return loaded;
 }
 
 function savePrizes(prizes) {
@@ -143,9 +150,37 @@ let prizes = loadPrizes();
 
 // Drops any queue entries pointing at prizes that no longer exist or are
 // out of stock, so the front of the queue (if any) is always safe to use
-// without needing to re-check on every read.
+// without needing to re-check on every read. A `null` entry is a queued
+// Mystery slot — not tied to any one prize, so it's never pruned.
 function pruneQueue() {
-  state.prizeQueue = state.prizeQueue.filter((id) => prizes.some((p) => p.id === id && p.quantity > 0));
+  state.prizeQueue = state.prizeQueue.filter((id) => id === null || prizes.some((p) => p.id === id && p.quantity > 0));
+}
+
+// How many units of each prize are already spoken for by specific (non-
+// Mystery) entries still waiting in `entries` — so a Mystery draw can be
+// kept from picking a prize whose only remaining stock is reserved for its
+// own upcoming queue slot.
+function reservedCounts(entries) {
+  const counts = new Map();
+  for (const id of entries) {
+    if (id === null) continue;
+    counts.set(id, (counts.get(id) || 0) + 1);
+  }
+  return counts;
+}
+
+// Random draw from prizes marked mystery-eligible, excluding any stock
+// already reserved (see reservedCounts). Used for both the implicit
+// default draw and a queued Mystery slot.
+function pickMysteryPrize(reserved) {
+  const candidates = prizes.filter(
+    (p) => p.mysteryEligible !== false && p.quantity - (reserved.get(p.id) || 0) > 0
+  );
+  if (candidates.length === 0) return null;
+  // Drawn fresh each spin so the reveal happens together with the winner —
+  // not a security context, non-cryptographic randomness is fine.
+  // eslint-disable-next-line sonarjs/pseudo-random
+  return candidates[Math.floor(Math.random() * candidates.length)];
 }
 
 function pickWeightedWinner(pool, totalWeight) {
@@ -161,41 +196,60 @@ function pickWeightedWinner(pool, totalWeight) {
   return pool[pool.length - 1];
 }
 
+// Pops and resolves the front of the Prize Queue: a specific prize id, or
+// `null` for a queued Mystery slot, drawn randomly here and constrained to
+// skip any prize whose remaining stock is already fully reserved by a
+// specific entry still waiting later in the same queue (see
+// reservedCounts) — so e.g. a 1-off prize queued for its own turn can
+// never also get handed out early as someone else's "mystery" reveal.
+function resolveFromQueue() {
+  const [front, ...rest] = state.prizeQueue;
+  state.prizeQueue = rest;
+  if (front === null) {
+    const prize = pickMysteryPrize(reservedCounts(rest));
+    return { prize, source: prize ? 'mystery' : 'none' };
+  }
+  const prize = prizes.find((p) => p.id === front) || null;
+  return { prize, source: prize ? 'queue' : 'none' };
+}
+
+function resolveFromCurrentPrizeId() {
+  const selected = prizes.find((p) => p.id === state.currentPrizeId);
+  const prize = selected && selected.quantity > 0 ? selected : null;
+  return { prize, source: prize ? 'specific' : 'none' };
+}
+
 // Resolves which prize (if any) this spin is for, and claims one unit of
 // it (dropping it from the selectable pool at zero stock). Precedence:
-//   1. Prize Queue — a pre-set, organizer-ordered sequence. Revealed in
-//      advance, same as a single specific selection.
-//   2. A specific prize explicitly selected.
-//   3. Mystery — a fresh random draw from in-stock prizes. This is the
-//      implicit default whenever neither of the above is set, so a spin
-//      never blocks for lack of a prize pick; it's also what "Mystery
-//      Prize" in the picker selects explicitly (by clearing 1 and 2).
+//   1. Prize Queue (resolveFromQueue) — a pre-set, organizer-ordered
+//      sequence, revealed in advance same as a single specific selection.
+//   2. A specific prize explicitly selected (resolveFromCurrentPrizeId).
+//   3. Mystery — a fresh random draw from the mystery-eligible, in-stock
+//      pool. This is the implicit default whenever neither of the above is
+//      set (or the specific selection just sold out), so a spin never
+//      blocks for lack of a prize pick; it's also what "Mystery Prize" in
+//      the picker selects explicitly (by clearing 1 and 2).
+// A queue that resolved to nothing (an exhausted Mystery slot, see above)
+// does *not* fall through to this unconstrained draw — otherwise it could
+// hand out stock that's promised to a later, specific queue entry.
 function resolveAndClaimPrize() {
   pruneQueue();
-  let currentPrize = null;
-  let source = 'none';
+  let result = { prize: null, source: 'none' };
+  let queued = false;
 
   if (state.prizeQueue.length > 0) {
-    currentPrize = prizes.find((p) => p.id === state.prizeQueue[0]) || null;
-    state.prizeQueue = state.prizeQueue.slice(1);
-    source = 'queue';
+    queued = true;
+    result = resolveFromQueue();
   } else if (state.currentPrizeId) {
-    const selected = prizes.find((p) => p.id === state.currentPrizeId);
-    currentPrize = selected && selected.quantity > 0 ? selected : null;
-    if (currentPrize) source = 'specific';
+    result = resolveFromCurrentPrizeId();
   }
 
-  if (!currentPrize) {
-    const available = prizes.filter((p) => p.quantity > 0);
-    if (available.length > 0) {
-      // Drawn fresh each spin so the reveal happens together with the
-      // winner — not a security context, non-cryptographic randomness is fine.
-      // eslint-disable-next-line sonarjs/pseudo-random
-      currentPrize = available[Math.floor(Math.random() * available.length)];
-      source = 'mystery';
-    }
+  if (!result.prize && !queued) {
+    const prize = pickMysteryPrize(new Map());
+    result = { prize, source: prize ? 'mystery' : 'none' };
   }
 
+  const { prize: currentPrize, source } = result;
   if (currentPrize) {
     currentPrize.quantity -= 1;
     if (currentPrize.quantity <= 0 && state.currentPrizeId === currentPrize.id) {
@@ -353,9 +407,22 @@ app.post('/api/prizes', upload.single('image'), async (req, res) => {
     name,
     imageUrl: `/api/prizes/images/${id}.png`,
     quantity,
+    mysteryEligible: true,
     createdAt: new Date().toISOString(),
   };
   prizes = [...prizes, prize];
+  savePrizes(prizes);
+  res.json(prize);
+});
+
+// Toggles whether a prize can turn up in a random Mystery draw (the
+// implicit default, and any queued Mystery slot) — lets a bigger prize
+// stay in the catalogue, selectable by name or via a queue slot, without
+// risking getting handed out early by a random pick.
+app.patch('/api/prizes/:id/mystery-eligible', (req, res) => {
+  const prize = prizes.find((p) => p.id === req.params.id);
+  if (!prize) return res.status(404).json({ error: 'Prize not found.' });
+  prize.mysteryEligible = Boolean(req.body.mysteryEligible);
   savePrizes(prizes);
   res.json(prize);
 });
@@ -388,11 +455,13 @@ app.post('/api/current-prize', (req, res) => {
 
 // Replaces the whole Prize Queue with an ordered list of prize ids — the
 // client recomputes the array locally for add/remove/reorder and always
-// sends the full result, so one endpoint covers all three. Selecting a
+// sends the full result, so one endpoint covers all three. An entry can be
+// `null` for a queued Mystery slot instead of a specific prize. Selecting a
 // queue cancels a specific single-prize selection (queue takes over).
 app.post('/api/prize-queue', (req, res) => {
   const queue = Array.isArray(req.body.queue) ? req.body.queue : [];
-  if (queue.some((id) => typeof id !== 'string' || !prizes.some((p) => p.id === id))) {
+  const invalid = queue.some((id) => id !== null && (typeof id !== 'string' || !prizes.some((p) => p.id === id)));
+  if (invalid) {
     return res.status(400).json({ error: 'Queue includes an unknown prize.' });
   }
   state.prizeQueue = queue;
