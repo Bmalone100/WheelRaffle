@@ -72,6 +72,26 @@ export function buildSegments(pool) {
   });
 }
 
+// Sizes a label to fill most of its wedge: start from the arc's angular
+// width (how tall text can be without touching the slice edges), then shrink
+// to fit the available centre-to-rim run if the name is long.
+function fitLabelFontSize(ctx, label, sweepDeg, radius) {
+  const sweepRad = (sweepDeg * Math.PI) / 180;
+  const arcWidth = 2 * (radius * 0.72) * Math.sin(sweepRad / 2);
+  const innerGap = radius * 0.14;
+  const available = radius - 14 - innerGap;
+
+  let size = Math.max(9, Math.min(arcWidth * 0.82, radius * 0.2));
+
+  ctx.font = `700 ${size}px 'Segoe UI', sans-serif`;
+  const width = ctx.measureText(label).width;
+  if (width > available && width > 0) {
+    size *= available / width;
+  }
+
+  return Math.max(8, size);
+}
+
 function drawWheel(canvas, segments) {
   const ctx = canvas.getContext('2d');
   const size = canvas.width;
@@ -111,11 +131,12 @@ function drawWheel(canvas, segments) {
       ctx.translate(radius, radius);
       ctx.rotate(flip ? mid + Math.PI : mid);
       ctx.fillStyle = seg.textColor;
-      ctx.font = `600 ${Math.max(11, Math.min(15, radius * 0.06))}px 'Segoe UI', sans-serif`;
       ctx.textBaseline = 'middle';
 
       const innerGap = radius * 0.14;
-      const label = seg.name.length > 20 ? `${seg.name.slice(0, 18)}…` : seg.name;
+      const label = seg.name.length > 28 ? `${seg.name.slice(0, 26)}…` : seg.name;
+      const fontSize = fitLabelFontSize(ctx, label, sweep, radius);
+      ctx.font = `700 ${fontSize}px 'Segoe UI', sans-serif`;
       if (flip) {
         ctx.textAlign = 'right';
         ctx.fillText(label, -innerGap, 0);
