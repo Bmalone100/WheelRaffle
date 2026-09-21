@@ -1,0 +1,7 @@
+[
+  { "name": "Alice Byrne", "email": "alice@example.com", "entries": 3 },
+  { "name": "Barry Coyle", "email": "barry@example.com", "entries": 1 },
+  { "name": "Ciara Doyle", "email": "ciara@example.com", "entries": 2 },
+  { "name": "Diarmuid Egan", "email": "diarmuid@example.com", "entries": 1 },
+  { "name": "Eabha Farrell", "email": "eabha@example.com", "entries": 4 }
+]

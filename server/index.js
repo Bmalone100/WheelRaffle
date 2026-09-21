@@ -1,0 +1,114 @@
+import express from 'express';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const ROOT = path.resolve(__dirname, '..');
+const CONFIG_PATH = path.join(ROOT, 'entrants.config.json');
+const STATE_PATH = path.join(__dirname, 'data', 'state.json');
+const PORT = process.env.PORT || 4000;
+
+function loadEntrantsConfig() {
+  const raw = fs.readFileSync(CONFIG_PATH, 'utf-8');
+  const entrants = JSON.parse(raw);
+  if (!Array.isArray(entrants)) {
+    throw new Error('entrants.config.json must be a JSON array of { name, email, entries }');
+  }
+  return entrants
+    .map((e, i) => ({
+      id: (e.email && e.email.trim().toLowerCase()) || `${e.name}-${i}`,
+      name: e.name,
+      email: e.email || '',
+      entries: Number(e.entries) || 0,
+    }))
+    .filter((e) => e.entries > 0);
+}
+
+function freshState() {
+  return { pool: loadEntrantsConfig(), history: [] };
+}
+
+function loadState() {
+  if (fs.existsSync(STATE_PATH)) {
+    try {
+      return JSON.parse(fs.readFileSync(STATE_PATH, 'utf-8'));
+    } catch {
+      // corrupt state file, fall through to a fresh load from config
+    }
+  }
+  return freshState();
+}
+
+function saveState(next) {
+  fs.mkdirSync(path.dirname(STATE_PATH), { recursive: true });
+  fs.writeFileSync(STATE_PATH, JSON.stringify(next, null, 2));
+}
+
+let state = loadState();
+saveState(state);
+
+const app = express();
+app.use(express.json());
+
+app.get('/api/state', (req, res) => {
+  res.json(state);
+});
+
+app.post('/api/spin', (req, res) => {
+  const pool = state.pool;
+  const totalWeight = pool.reduce((sum, e) => sum + e.entries, 0);
+
+  if (pool.length === 0 || totalWeight <= 0) {
+    return res.status(400).json({ error: 'No entrants left in the wheel.' });
+  }
+
+  const poolBefore = pool.map((e) => ({ ...e }));
+
+  let roll = Math.random() * totalWeight;
+  let winner = null;
+  for (const entrant of pool) {
+    roll -= entrant.entries;
+    if (roll <= 0) {
+      winner = entrant;
+      break;
+    }
+  }
+  if (!winner) winner = pool[pool.length - 1];
+
+  winner.entries -= 1;
+  const entriesRemaining = winner.entries;
+
+  const historyEntry = {
+    id: winner.id,
+    name: winner.name,
+    email: winner.email,
+    wonAt: new Date().toISOString(),
+    entriesRemaining,
+  };
+  state.history = [historyEntry, ...state.history];
+  state.pool = pool.filter((e) => e.entries > 0);
+
+  saveState(state);
+
+  res.json({
+    winner: { id: winner.id, name: winner.name, email: winner.email, entriesRemaining },
+    poolBefore,
+    poolAfter: state.pool,
+    history: state.history,
+  });
+});
+
+app.post('/api/reset', (req, res) => {
+  try {
+    state = freshState();
+  } catch (e) {
+    return res.status(400).json({ error: e.message });
+  }
+  saveState(state);
+  res.json(state);
+});
+
+app.listen(PORT, () => {
+  console.log(`WheelRaffle server running at http://localhost:${PORT}`);
+});
