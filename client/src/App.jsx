@@ -248,7 +248,7 @@ export default function App() {
       <EntrantSidebar pool={pool} open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
 
       <header className="app-header">
-        <h1>WheelRaffle</h1>
+        <h1>{document.title}</h1>
         <p className="subtitle">
           {pool.length} entrant{pool.length === 1 ? '' : 's'} · {totalTickets} ticket
           {totalTickets === 1 ? '' : 's'} in the draw
