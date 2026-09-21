@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import confetti from 'canvas-confetti';
-import { AlertTriangle, Gift, Settings, Users, X } from 'lucide-react';
+import { AlertTriangle, Settings, Users, X } from 'lucide-react';
 import SpinnerList from './components/SpinnerList.jsx';
 import EntrantSidebar from './components/EntrantSidebar.jsx';
+import PrizeBadge from './components/PrizeBadge.jsx';
 import PrizePicker from './components/PrizePicker.jsx';
 import WinnerHistory from './components/WinnerHistory.jsx';
 import {
@@ -13,6 +14,7 @@ import {
   loadEntrants,
   resetRaffle,
   setCurrentPrize,
+  setMysteryPrize,
   spin,
 } from './api.js';
 
@@ -49,6 +51,7 @@ export default function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [prizes, setPrizes] = useState([]);
   const [currentPrizeId, setCurrentPrizeId] = useState(null);
+  const [mysteryPrize, setMysteryPrizeFlag] = useState(false);
   const [prizePickerOpen, setPrizePickerOpen] = useState(false);
   const optionsRef = useRef(null);
 
@@ -70,6 +73,7 @@ export default function App() {
         setDisplayPool(s.pool);
         setHistory(s.history);
         setCurrentPrizeId(s.currentPrizeId || null);
+        setMysteryPrizeFlag(Boolean(s.mysteryPrize));
         setPrizes(p);
       })
       .catch((e) => setError(e.message))
@@ -98,6 +102,12 @@ export default function App() {
     setPool(pendingResult.poolAfter);
     setHistory(pendingResult.history);
     setLastWinner(pendingResult.winner);
+    // A specific (non-Mystery) prize may have just sold out and been
+    // auto-cleared server-side, or simply had its stock decremented — stay
+    // in sync so the badge/picker never show stale quantities or a
+    // selection that's no longer valid.
+    setPrizes(pendingResult.prizes);
+    setCurrentPrizeId(pendingResult.currentPrizeId ?? null);
     setPendingResult(null);
     celebrateWinner();
   }, [pendingResult]);
@@ -147,6 +157,19 @@ export default function App() {
     try {
       await setCurrentPrize(prizeId);
       setCurrentPrizeId(prizeId);
+      setMysteryPrizeFlag(false);
+      setPrizePickerOpen(false);
+    } catch (e) {
+      setError(e.message);
+    }
+  }, []);
+
+  const handleSelectMystery = useCallback(async () => {
+    setError('');
+    try {
+      await setMysteryPrize();
+      setCurrentPrizeId(null);
+      setMysteryPrizeFlag(true);
       setPrizePickerOpen(false);
     } catch (e) {
       setError(e.message);
@@ -173,6 +196,10 @@ export default function App() {
 
   const totalTickets = pool.reduce((sum, e) => sum + e.entries, 0);
   const currentPrize = prizes.find((p) => p.id === currentPrizeId) || null;
+  const prizeRequired = prizes.length > 0;
+  const noPrizeArmed = prizeRequired && !mysteryPrize && !currentPrize;
+  const emptyMysteryPool = mysteryPrize && prizes.length === 0;
+  const spinBlockedByPrize = noPrizeArmed || emptyMysteryPool;
 
   let mainContent;
   if (loading) {
@@ -261,6 +288,7 @@ export default function App() {
 
       {lastWinner && !spinning && (
         <div className="winner-banner">
+          {lastWinner.wasMysteryPrize && <div className="winner-banner-mystery-tag">🎲 Mystery prize revealed!</div>}
           🎉 <strong>{lastWinner.name}</strong> wins
           {lastWinner.prizeName ? (
             <>
@@ -274,35 +302,38 @@ export default function App() {
         </div>
       )}
 
-      <button type="button" className="prize-badge" onClick={() => setPrizePickerOpen(true)}>
-        {currentPrize ? (
-          <>
-            <img src={currentPrize.imageUrl} alt="" className="prize-badge-icon" />
-            <span className="prize-badge-text">
-              <span className="prize-badge-label">Drawing for</span>
-              <span className="prize-badge-name">{currentPrize.name}</span>
-            </span>
-          </>
-        ) : (
-          <>
-            <Gift size={20} />
-            <span className="prize-badge-placeholder">Select a prize to draw for</span>
-          </>
-        )}
-      </button>
+      <PrizeBadge
+        mysteryPrize={mysteryPrize}
+        currentPrize={currentPrize}
+        prizeRequired={prizeRequired}
+        onClick={() => setPrizePickerOpen(true)}
+      />
 
       <div className="controls">
-        <button className="btn btn-primary" onClick={handleSpin} disabled={spinning || pool.length === 0}>
+        <button
+          className="btn btn-primary"
+          onClick={handleSpin}
+          disabled={spinning || pool.length === 0 || spinBlockedByPrize}
+        >
           {spinning ? 'Spinning…' : 'Spin'}
         </button>
       </div>
+      {spinBlockedByPrize && !spinning && (
+        <p className="spin-hint">
+          {emptyMysteryPool
+            ? 'Add at least one prize for Mystery Prize to draw from.'
+            : 'Choose a prize (or Mystery Prize) above before spinning.'}
+        </p>
+      )}
 
       <PrizePicker
         prizes={prizes}
         currentPrizeId={currentPrizeId}
+        mysteryPrize={mysteryPrize}
         open={prizePickerOpen}
         onClose={() => setPrizePickerOpen(false)}
         onSelect={handleSelectPrize}
+        onSelectMystery={handleSelectMystery}
         onAdd={handleAddPrize}
         onDelete={handleDeletePrize}
       />

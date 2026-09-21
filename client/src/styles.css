@@ -264,6 +264,22 @@ body {
   width: 100%;
 }
 
+.winner-banner-mystery-tag {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--heather);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 4px;
+}
+
+.spin-hint {
+  margin: -12px 0 0;
+  color: var(--error);
+  font-size: 0.85rem;
+  text-align: center;
+}
+
 .banner {
   background: var(--wheat-light);
   border-radius: 12px;
@@ -439,6 +455,14 @@ body {
   flex-shrink: 0;
 }
 
+.prize-badge-icon-mystery {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--heather);
+  color: var(--wheat-light);
+}
+
 .prize-badge-text {
   display: flex;
   flex-direction: column;
@@ -548,15 +572,32 @@ body {
   box-shadow: 0 4px 10px rgba(61, 37, 85, 0.2);
 }
 
-.prize-icon-none {
+.prize-icon-wrap {
+  position: relative;
+  display: inline-flex;
+}
+
+.prize-qty-badge {
+  position: absolute;
+  bottom: -6px;
+  right: -6px;
+  background: var(--heather);
+  color: var(--wheat-light);
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 999px;
+  border: 2px solid var(--card-bg);
+}
+
+.prize-icon-mystery {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--wheat-light);
-  color: #7c6c88;
-  font-size: 1.4rem;
+  background: var(--heather);
+  color: var(--wheat-light);
   box-shadow: none;
-  border: 1.5px dashed var(--wheat-dark);
+  border: 1.5px dashed var(--heather-dark);
 }
 
 .prize-card-name {
@@ -609,6 +650,24 @@ body {
   border: 1px solid var(--wheat-dark);
   border-radius: 10px;
   padding: 10px 12px;
+  font-size: 0.95rem;
+  font-family: inherit;
+}
+
+.prize-qty-label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 0.9rem;
+  color: var(--heather-dark);
+  font-weight: 600;
+}
+
+.prize-qty-input {
+  width: 70px;
+  border: 1px solid var(--wheat-dark);
+  border-radius: 10px;
+  padding: 8px 10px;
   font-size: 0.95rem;
   font-family: inherit;
 }

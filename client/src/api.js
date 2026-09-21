@@ -33,3 +33,5 @@ export const addPrize = (formData) => upload('/prizes', formData);
 export const deletePrize = (id) => request(`/prizes/${id}`, { method: 'DELETE' });
 export const setCurrentPrize = (prizeId) =>
   request('/current-prize', { method: 'POST', body: JSON.stringify({ prizeId }) });
+export const setMysteryPrize = () =>
+  request('/current-prize', { method: 'POST', body: JSON.stringify({ mystery: true }) });

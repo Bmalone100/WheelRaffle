@@ -33,16 +33,29 @@ Runs entirely on your machine — no cloud dependency.
 Click the prize badge above the Spin button (or the gift icon it shows when nothing's
 selected) to open the prize picker:
 
-- **Add a prize**: give it a name and pick any image file (PNG, JPEG, whatever) — the
-  server centre-crops and resizes it to a uniform 320×320 icon (via `sharp`) so every
-  prize card looks consistent regardless of the source photo's shape, and converts it
-  to PNG. Originals aren't kept; only the normalized icon is stored, under
-  `server/data/prize-images/` (gitignored).
-- **Select a prize** (or "No prize") before spinning — every win from that point is
-  recorded against it: the winner banner, Winner History, and the CSV spin log
-  (an added `prize` column) all show which prize was drawn. The selection persists
-  across spins, so you set it once per prize and keep spinning until you move to the
-  next one.
+- **Add a prize**: give it a name, a quantity (how many you have to give away), and
+  pick any image file (PNG, JPEG, whatever) — the server centre-crops and resizes it
+  to a uniform 320×320 icon (via `sharp`) so every prize card looks consistent
+  regardless of the source photo's shape, and converts it to PNG. Originals aren't
+  kept; only the normalized icon is stored, under `server/data/prize-images/`
+  (gitignored).
+- Each win claims **one unit** of the prize drawn (shown as a small `×N` badge on its
+  card in the picker — not shown anywhere on the presented screen, same reasoning as
+  ticket counts below). Once a prize hits zero it drops out of the picker and Mystery
+  Prize's pool, same as a ticket-pool entrant hitting zero entries; if it was the
+  active selection, the badge reverts to "Pick a prize" and Spin re-locks until you
+  choose the next one.
+- **Select a prize** before spinning — every win from that point is recorded against
+  it: the winner banner, Winner History, and the CSV spin log (an added `prize`
+  column) all show which prize was drawn. The selection persists across spins, so
+  you set it once per prize and keep spinning until you move to the next one.
+- **Mystery Prize**: instead of picking one, choose the dice tile to have the server
+  randomly draw a different prize from the catalogue *at spin time* — nobody, not
+  even you, knows which one until the winner's revealed alongside it. Stays in
+  Mystery mode for subsequent spins until you pick something else.
+- Once any prizes exist, **Spin is disabled until you've chosen one** (a specific
+  prize or Mystery) — a raffle can't run without something on the line. With zero
+  prizes in the catalogue there's nothing to require, so spinning is unrestricted.
 - Deleting a prize removes its icon file but leaves past history entries intact (they
   keep a snapshot of the prize name at the time of the win).
 
@@ -113,6 +126,7 @@ server/                # Express API + persisted state (server/data/, gitignored
 client/                # React + Vite frontend
   src/components/SpinnerList.jsx    # the weighted, decelerating name reel
   src/components/EntrantSidebar.jsx # pull-out list of current entrants + ticket counts
-  src/components/PrizePicker.jsx    # add/select/delete prizes
+  src/components/PrizePicker.jsx    # add/select/delete prizes, Mystery Prize
+  src/components/PrizeBadge.jsx     # the "Drawing for..." badge above Spin
   src/lib/randomOrder.js            # deterministic shuffle shared by the reel
 ```

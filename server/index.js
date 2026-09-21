@@ -88,6 +88,47 @@ let state = loadState();
 saveState(state);
 let prizes = loadPrizes();
 
+function pickWeightedWinner(pool, totalWeight) {
+  // Weighted draw for a local, organizer-run raffle — not a security context
+  // (no secrets/tokens involved), so Math.random's non-cryptographic
+  // randomness is an appropriate, standard choice here.
+  // eslint-disable-next-line sonarjs/pseudo-random
+  let roll = Math.random() * totalWeight;
+  for (const entrant of pool) {
+    roll -= entrant.entries;
+    if (roll <= 0) return entrant;
+  }
+  return pool[pool.length - 1];
+}
+
+// Resolves which prize (if any) this spin is for — a specific selection, or
+// a fresh random draw from in-stock prizes when in Mystery mode — and claims
+// one unit of it, dropping it from the selectable pool at zero stock.
+function resolveAndClaimPrize() {
+  let currentPrize = null;
+  if (state.mysteryPrize) {
+    const available = prizes.filter((p) => p.quantity > 0);
+    if (available.length > 0) {
+      // Drawn fresh each spin so the reveal happens together with the
+      // winner — not a security context, non-cryptographic randomness is fine.
+      // eslint-disable-next-line sonarjs/pseudo-random
+      currentPrize = available[Math.floor(Math.random() * available.length)];
+    }
+  } else {
+    const selected = prizes.find((p) => p.id === state.currentPrizeId);
+    currentPrize = selected && selected.quantity > 0 ? selected : null;
+  }
+
+  if (currentPrize) {
+    currentPrize.quantity -= 1;
+    if (currentPrize.quantity <= 0 && state.currentPrizeId === currentPrize.id) {
+      state.currentPrizeId = null;
+    }
+    savePrizes(prizes);
+  }
+  return currentPrize;
+}
+
 const upload = multer({
   storage: multer.memoryStorage(),
   // 8MB is a deliberate, generous cap for a single prize photo on this
@@ -109,8 +150,12 @@ app.get('/api/state', (req, res) => {
   res.json(state);
 });
 
+// Only prizes still in stock are selectable — same pattern as the entrant
+// pool, which only lists entrants with entries > 0. Depleted prizes stay in
+// prizes.json (so past history's prizeId/prizeImageUrl still resolve) but
+// drop out of what the picker and Mystery Prize can offer.
 app.get('/api/prizes', (req, res) => {
-  res.json(prizes);
+  res.json(prizes.filter((p) => p.quantity > 0));
 });
 
 // Normalizes any uploaded image (PNG/JPEG/etc, any source aspect ratio) into
@@ -119,7 +164,11 @@ app.get('/api/prizes', (req, res) => {
 // regardless of what was uploaded.
 app.post('/api/prizes', upload.single('image'), async (req, res) => {
   const name = (req.body.name || '').trim();
+  const quantity = Number.parseInt(req.body.quantity, 10);
   if (!name) return res.status(400).json({ error: 'Prize name is required.' });
+  if (!Number.isInteger(quantity) || quantity < 1) {
+    return res.status(400).json({ error: 'Quantity must be a whole number of at least 1.' });
+  }
   if (!req.file) return res.status(400).json({ error: 'An image file is required.' });
 
   const id = crypto.randomUUID();
@@ -134,7 +183,13 @@ app.post('/api/prizes', upload.single('image'), async (req, res) => {
     return res.status(400).json({ error: 'Could not process that image file.' });
   }
 
-  const prize = { id, name, imageUrl: `/api/prizes/images/${id}.png`, createdAt: new Date().toISOString() };
+  const prize = {
+    id,
+    name,
+    imageUrl: `/api/prizes/images/${id}.png`,
+    quantity,
+    createdAt: new Date().toISOString(),
+  };
   prizes = [...prizes, prize];
   savePrizes(prizes);
   res.json(prize);
@@ -152,14 +207,23 @@ app.delete('/api/prizes/:id', (req, res) => {
   res.json({ ok: true });
 });
 
+// Either { mystery: true } (each spin randomly draws a prize from the
+// catalogue, revealed together with the winner) or { prizeId } for a
+// specific, pre-announced prize.
 app.post('/api/current-prize', (req, res) => {
-  const { prizeId } = req.body;
-  if (prizeId && !prizes.some((p) => p.id === prizeId)) {
-    return res.status(400).json({ error: 'Unknown prize.' });
+  const { prizeId, mystery } = req.body;
+  if (mystery) {
+    state.mysteryPrize = true;
+    state.currentPrizeId = null;
+  } else {
+    if (prizeId && !prizes.some((p) => p.id === prizeId && p.quantity > 0)) {
+      return res.status(400).json({ error: 'Unknown or out-of-stock prize.' });
+    }
+    state.mysteryPrize = false;
+    state.currentPrizeId = prizeId || null;
   }
-  state.currentPrizeId = prizeId || null;
   saveState(state);
-  res.json({ currentPrizeId: state.currentPrizeId });
+  res.json({ currentPrizeId: state.currentPrizeId, mysteryPrize: state.mysteryPrize });
 });
 
 app.post('/api/spin', (req, res) => {
@@ -172,25 +236,12 @@ app.post('/api/spin', (req, res) => {
 
   const poolBefore = pool.map((e) => ({ ...e }));
 
-  // Weighted draw for a local, organizer-run raffle — not a security context
-  // (no secrets/tokens involved), so Math.random's non-cryptographic
-  // randomness is an appropriate, standard choice here.
-  // eslint-disable-next-line sonarjs/pseudo-random
-  let roll = Math.random() * totalWeight;
-  let winner = null;
-  for (const entrant of pool) {
-    roll -= entrant.entries;
-    if (roll <= 0) {
-      winner = entrant;
-      break;
-    }
-  }
-  if (!winner) winner = pool[pool.length - 1];
-
+  const winner = pickWeightedWinner(pool, totalWeight);
   winner.entries -= 1;
   const entriesRemaining = winner.entries;
 
-  const currentPrize = prizes.find((p) => p.id === state.currentPrizeId) || null;
+  const currentPrize = resolveAndClaimPrize();
+
   const historyEntry = {
     id: winner.id,
     name: winner.name,
@@ -199,6 +250,8 @@ app.post('/api/spin', (req, res) => {
     entriesRemaining,
     prizeId: currentPrize ? currentPrize.id : null,
     prizeName: currentPrize ? currentPrize.name : null,
+    prizeImageUrl: currentPrize ? currentPrize.imageUrl : null,
+    wasMysteryPrize: Boolean(state.mysteryPrize && currentPrize),
   };
   state.history = [historyEntry, ...state.history];
   state.pool = pool.filter((e) => e.entries > 0);
@@ -213,10 +266,14 @@ app.post('/api/spin', (req, res) => {
       email: winner.email,
       entriesRemaining,
       prizeName: historyEntry.prizeName,
+      prizeImageUrl: historyEntry.prizeImageUrl,
+      wasMysteryPrize: historyEntry.wasMysteryPrize,
     },
     poolBefore,
     poolAfter: state.pool,
     history: state.history,
+    prizes: prizes.filter((p) => p.quantity > 0),
+    currentPrizeId: state.currentPrizeId,
   });
 });
 
@@ -231,7 +288,12 @@ app.get('/api/log', (req, res) => {
 // history — for adding/editing entrants mid-event without losing the round.
 app.post('/api/load-entrants', (req, res) => {
   try {
-    state = { pool: loadEntrantsConfig(), history: state.history, currentPrizeId: state.currentPrizeId };
+    state = {
+      pool: loadEntrantsConfig(),
+      history: state.history,
+      currentPrizeId: state.currentPrizeId,
+      mysteryPrize: state.mysteryPrize,
+    };
   } catch (e) {
     return res.status(400).json({ error: e.message });
   }
@@ -245,7 +307,7 @@ app.post('/api/load-entrants', (req, res) => {
 // selection are a separate concern and are left as-is.
 app.post('/api/reset', (req, res) => {
   try {
-    state = { ...freshState(), currentPrizeId: state.currentPrizeId };
+    state = { ...freshState(), currentPrizeId: state.currentPrizeId, mysteryPrize: state.mysteryPrize };
   } catch (e) {
     return res.status(400).json({ error: e.message });
   }
