@@ -21,7 +21,10 @@ Runs entirely on your machine — no cloud dependency.
 - The draw is a scrolling name reel weighted by ticket count (someone with 3 entries
   appears 3 times, scattered through the reel) — a pie wheel can't keep hundreds of
   individual slices legible at any sane page size, so this stays fully readable
-  regardless of how many entrants or tickets are in play.
+  regardless of how many entrants or tickets are in play. An entrant's repeated
+  tickets are spread out rather than shown back-to-back, so "Jane Doe / Jane Doe" on
+  consecutive rows never reads as a glitch to someone who doesn't know it's just two
+  tickets.
 - Click the people icon (top left) to pull out a sidebar listing every current
   entrant and their remaining ticket count. **This is deliberately the only place
   ticket counts are shown** — the winner banner and Winner History only ever show a
@@ -42,8 +45,8 @@ Runs entirely on your machine — no cloud dependency.
 
 ## Prizes
 
-Click the prize badge above the Spin button (or the gift icon it shows when nothing's
-selected) to open the prize picker:
+Click the prize badge above the Spin button (it shows "Mystery Prize" by default) to
+open the prize picker:
 
 - **Add a prize**: give it a name, a quantity (how many you have to give away), and
   pick any image file (PNG, JPEG, whatever) — the server centre-crops and resizes it
@@ -53,23 +56,25 @@ selected) to open the prize picker:
   (gitignored).
 - Each win claims **one unit** of the prize drawn (shown as a small `×N` badge on its
   card in the picker — not shown anywhere on the presented screen, same reasoning as
-  ticket counts below). Once a prize hits zero it drops out of the picker and Mystery
-  Prize's pool, same as a ticket-pool entrant hitting zero entries; if it was the
-  active selection, the badge reverts to "Pick a prize" and Spin re-locks until you
-  choose the next one.
-- **Select a prize** before spinning — every win from that point is recorded against
-  it: the winner banner, Winner History, and the CSV spin log (an added `prize`
-  column) all show which prize was drawn. The selection persists across spins, so
-  you set it once per prize and keep spinning until you move to the next one.
-- **Mystery Prize**: instead of picking one, choose the dice tile to have the server
-  randomly draw a different prize from the catalogue *at spin time* — nobody, not
-  even you, knows which one until the winner's revealed alongside it. Stays in
-  Mystery mode for subsequent spins until you pick something else.
-- Once any prizes exist, **Spin is disabled until you've chosen one** (a specific
-  prize or Mystery) — a raffle can't run without something on the line. With zero
-  prizes in the catalogue there's nothing to require, so spinning is unrestricted.
-- Deleting a prize removes its icon file but leaves past history entries intact (they
-  keep a snapshot of the prize name at the time of the win).
+  ticket counts below). Once a prize hits zero it drops out of the picker, the queue,
+  and Mystery Prize's pool, same as a ticket-pool entrant hitting zero entries.
+- Spinning always has something to resolve to. In order:
+  1. **Prize Queue** — a fixed, pre-set sequence of prizes, revealed in advance. Click
+     the small "add to queue" icon on any prize card to append it; the Prize Queue
+     section below the grid lists the order, and each entry can be reordered or
+     removed. Every spin claims and pops the front of the queue; once it's empty,
+     spins fall back to whatever's set below.
+  2. **A specific prize**, selected by clicking its card — every win from that point
+     is recorded against it until you pick something else. Selecting a specific
+     prize (or Mystery) clears any queue.
+  3. **Mystery Prize** — the default when neither of the above is set. The server
+     randomly draws from the in-stock catalogue *at spin time*; nobody, not even
+     you, knows which one until the winner's revealed alongside it.
+  Spin is never blocked waiting on a prize choice — with no prizes in the catalogue
+  at all, a spin simply has no prize to award.
+- Deleting a prize removes its icon file, drops it from the queue if it was in one,
+  and leaves past history entries intact (they keep a snapshot of the prize name at
+  the time of the win).
 
 ## Spin log
 
@@ -142,8 +147,8 @@ client/                # React + Vite frontend
   src/components/SpinnerList.jsx      # the weighted, decelerating name reel
   src/components/EntrantSidebar.jsx   # entrant list, click-to-reveal email, Add Entrants
   src/components/AddEntrantsModal.jsx # single-entrant form + CSV import
-  src/components/PrizePicker.jsx      # add/select/delete prizes, Mystery Prize
+  src/components/PrizePicker.jsx      # add/select/delete prizes, build/reorder the Prize Queue
   src/components/PrizeBadge.jsx       # the "Drawing for..." badge above Spin
   src/components/FilePicker.jsx       # shared single-control file input (image/CSV)
-  src/lib/randomOrder.js              # deterministic shuffle shared by the reel
+  src/lib/randomOrder.js              # deterministic shuffle + no-adjacent-repeat arrangement for the reel
 ```

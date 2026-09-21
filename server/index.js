@@ -84,7 +84,7 @@ function parseCsv(text) {
 }
 
 function freshState() {
-  return { pool: loadEntrantsConfig(), history: [] };
+  return { pool: loadEntrantsConfig(), history: [], currentPrizeId: null, prizeQueue: [] };
 }
 
 function loadState() {
@@ -136,8 +136,17 @@ function savePrizes(prizes) {
 }
 
 let state = loadState();
+if (!Array.isArray(state.prizeQueue)) state.prizeQueue = [];
+delete state.mysteryPrize; // superseded: Mystery is now the implicit fallback, not a stored flag
 saveState(state);
 let prizes = loadPrizes();
+
+// Drops any queue entries pointing at prizes that no longer exist or are
+// out of stock, so the front of the queue (if any) is always safe to use
+// without needing to re-check on every read.
+function pruneQueue() {
+  state.prizeQueue = state.prizeQueue.filter((id) => prizes.some((p) => p.id === id && p.quantity > 0));
+}
 
 function pickWeightedWinner(pool, totalWeight) {
   // Weighted draw for a local, organizer-run raffle — not a security context
@@ -152,22 +161,39 @@ function pickWeightedWinner(pool, totalWeight) {
   return pool[pool.length - 1];
 }
 
-// Resolves which prize (if any) this spin is for — a specific selection, or
-// a fresh random draw from in-stock prizes when in Mystery mode — and claims
-// one unit of it, dropping it from the selectable pool at zero stock.
+// Resolves which prize (if any) this spin is for, and claims one unit of
+// it (dropping it from the selectable pool at zero stock). Precedence:
+//   1. Prize Queue — a pre-set, organizer-ordered sequence. Revealed in
+//      advance, same as a single specific selection.
+//   2. A specific prize explicitly selected.
+//   3. Mystery — a fresh random draw from in-stock prizes. This is the
+//      implicit default whenever neither of the above is set, so a spin
+//      never blocks for lack of a prize pick; it's also what "Mystery
+//      Prize" in the picker selects explicitly (by clearing 1 and 2).
 function resolveAndClaimPrize() {
+  pruneQueue();
   let currentPrize = null;
-  if (state.mysteryPrize) {
+  let source = 'none';
+
+  if (state.prizeQueue.length > 0) {
+    currentPrize = prizes.find((p) => p.id === state.prizeQueue[0]) || null;
+    state.prizeQueue = state.prizeQueue.slice(1);
+    source = 'queue';
+  } else if (state.currentPrizeId) {
+    const selected = prizes.find((p) => p.id === state.currentPrizeId);
+    currentPrize = selected && selected.quantity > 0 ? selected : null;
+    if (currentPrize) source = 'specific';
+  }
+
+  if (!currentPrize) {
     const available = prizes.filter((p) => p.quantity > 0);
     if (available.length > 0) {
       // Drawn fresh each spin so the reveal happens together with the
       // winner — not a security context, non-cryptographic randomness is fine.
       // eslint-disable-next-line sonarjs/pseudo-random
       currentPrize = available[Math.floor(Math.random() * available.length)];
+      source = 'mystery';
     }
-  } else {
-    const selected = prizes.find((p) => p.id === state.currentPrizeId);
-    currentPrize = selected && selected.quantity > 0 ? selected : null;
   }
 
   if (currentPrize) {
@@ -176,8 +202,9 @@ function resolveAndClaimPrize() {
       state.currentPrizeId = null;
     }
     savePrizes(prizes);
+    pruneQueue(); // this win may have just depleted another prize still queued further back
   }
-  return currentPrize;
+  return { prize: currentPrize, source };
 }
 
 const upload = multer({
@@ -338,30 +365,40 @@ app.delete('/api/prizes/:id', (req, res) => {
   prizes = prizes.filter((p) => p.id !== id);
   savePrizes(prizes);
   fs.rm(path.join(PRIZE_IMAGES_DIR, `${id}.png`), { force: true }, () => {});
-  if (state.currentPrizeId === id) {
-    state.currentPrizeId = null;
-    saveState(state);
-  }
-  res.json({ ok: true });
+  if (state.currentPrizeId === id) state.currentPrizeId = null;
+  pruneQueue();
+  saveState(state);
+  res.json({ ok: true, prizeQueue: state.prizeQueue });
 });
 
-// Either { mystery: true } (each spin randomly draws a prize from the
-// catalogue, revealed together with the winner) or { prizeId } for a
-// specific, pre-announced prize.
+// Selects a specific prize to draw for ({ prizeId }), or explicitly returns
+// to Mystery mode ({ prizeId: null }) — either way this is a single,
+// pre-announced-or-random choice, so it cancels any active Prize Queue
+// (queue vs. specific-selection vs. Mystery are mutually exclusive modes).
 app.post('/api/current-prize', (req, res) => {
-  const { prizeId, mystery } = req.body;
-  if (mystery) {
-    state.mysteryPrize = true;
-    state.currentPrizeId = null;
-  } else {
-    if (prizeId && !prizes.some((p) => p.id === prizeId && p.quantity > 0)) {
-      return res.status(400).json({ error: 'Unknown or out-of-stock prize.' });
-    }
-    state.mysteryPrize = false;
-    state.currentPrizeId = prizeId || null;
+  const { prizeId } = req.body;
+  if (prizeId && !prizes.some((p) => p.id === prizeId && p.quantity > 0)) {
+    return res.status(400).json({ error: 'Unknown or out-of-stock prize.' });
   }
+  state.currentPrizeId = prizeId || null;
+  state.prizeQueue = [];
   saveState(state);
-  res.json({ currentPrizeId: state.currentPrizeId, mysteryPrize: state.mysteryPrize });
+  res.json({ currentPrizeId: state.currentPrizeId, prizeQueue: state.prizeQueue });
+});
+
+// Replaces the whole Prize Queue with an ordered list of prize ids — the
+// client recomputes the array locally for add/remove/reorder and always
+// sends the full result, so one endpoint covers all three. Selecting a
+// queue cancels a specific single-prize selection (queue takes over).
+app.post('/api/prize-queue', (req, res) => {
+  const queue = Array.isArray(req.body.queue) ? req.body.queue : [];
+  if (queue.some((id) => typeof id !== 'string' || !prizes.some((p) => p.id === id))) {
+    return res.status(400).json({ error: 'Queue includes an unknown prize.' });
+  }
+  state.prizeQueue = queue;
+  state.currentPrizeId = null;
+  saveState(state);
+  res.json({ prizeQueue: state.prizeQueue, currentPrizeId: state.currentPrizeId });
 });
 
 app.post('/api/spin', (req, res) => {
@@ -378,7 +415,7 @@ app.post('/api/spin', (req, res) => {
   winner.entries -= 1;
   const entriesRemaining = winner.entries;
 
-  const currentPrize = resolveAndClaimPrize();
+  const { prize: currentPrize, source: prizeSource } = resolveAndClaimPrize();
 
   const historyEntry = {
     id: winner.id,
@@ -389,7 +426,7 @@ app.post('/api/spin', (req, res) => {
     prizeId: currentPrize ? currentPrize.id : null,
     prizeName: currentPrize ? currentPrize.name : null,
     prizeImageUrl: currentPrize ? currentPrize.imageUrl : null,
-    wasMysteryPrize: Boolean(state.mysteryPrize && currentPrize),
+    wasMysteryPrize: prizeSource === 'mystery',
   };
   state.history = [historyEntry, ...state.history];
   state.pool = pool.filter((e) => e.entries > 0);
@@ -412,6 +449,7 @@ app.post('/api/spin', (req, res) => {
     history: state.history,
     prizes: prizes.filter((p) => p.quantity > 0),
     currentPrizeId: state.currentPrizeId,
+    prizeQueue: state.prizeQueue,
   });
 });
 
@@ -430,7 +468,7 @@ app.post('/api/load-entrants', (req, res) => {
       pool: loadEntrantsConfig(),
       history: state.history,
       currentPrizeId: state.currentPrizeId,
-      mysteryPrize: state.mysteryPrize,
+      prizeQueue: state.prizeQueue,
     };
   } catch (e) {
     return res.status(400).json({ error: e.message });
@@ -445,7 +483,7 @@ app.post('/api/load-entrants', (req, res) => {
 // selection are a separate concern and are left as-is.
 app.post('/api/reset', (req, res) => {
   try {
-    state = { ...freshState(), currentPrizeId: state.currentPrizeId, mysteryPrize: state.mysteryPrize };
+    state = { ...freshState(), currentPrizeId: state.currentPrizeId, prizeQueue: state.prizeQueue };
   } catch (e) {
     return res.status(400).json({ error: e.message });
   }

@@ -1,8 +1,30 @@
-import { Dices, Gift } from 'lucide-react';
+import { Dices, ListOrdered } from 'lucide-react';
 
-export default function PrizeBadge({ mysteryPrize, currentPrize, prizeRequired, onClick }) {
+// Mystery is the implicit default whenever nothing specific is armed — there
+// is no more "pick a prize before spinning" placeholder, since a spin is
+// always able to fall back to a random draw from the in-stock pool.
+export default function PrizeBadge({ currentPrize, queued, queueLength, onClick }) {
   let content;
-  if (mysteryPrize) {
+  if (currentPrize) {
+    content = (
+      <>
+        <img src={currentPrize.imageUrl} alt="" className="prize-badge-icon" />
+        <span className="prize-badge-text">
+          <span className="prize-badge-label">
+            {queued ? (
+              <>
+                <ListOrdered size={12} /> Next in queue
+                {queueLength > 1 ? ` (+${queueLength - 1} more)` : ''}
+              </>
+            ) : (
+              'Drawing for'
+            )}
+          </span>
+          <span className="prize-badge-name">{currentPrize.name}</span>
+        </span>
+      </>
+    );
+  } else {
     content = (
       <>
         <span className="prize-badge-icon prize-badge-icon-mystery">
@@ -11,25 +33,6 @@ export default function PrizeBadge({ mysteryPrize, currentPrize, prizeRequired, 
         <span className="prize-badge-text">
           <span className="prize-badge-label">Drawing for</span>
           <span className="prize-badge-name">Mystery Prize</span>
-        </span>
-      </>
-    );
-  } else if (currentPrize) {
-    content = (
-      <>
-        <img src={currentPrize.imageUrl} alt="" className="prize-badge-icon" />
-        <span className="prize-badge-text">
-          <span className="prize-badge-label">Drawing for</span>
-          <span className="prize-badge-name">{currentPrize.name}</span>
-        </span>
-      </>
-    );
-  } else {
-    content = (
-      <>
-        <Gift size={20} />
-        <span className="prize-badge-placeholder">
-          {prizeRequired ? 'Pick a prize before spinning' : 'Select a prize to draw for'}
         </span>
       </>
     );

@@ -1,7 +1,42 @@
 [
-  { "name": "Alice Byrne", "email": "alice@example.com", "entries": 3 },
-  { "name": "Barry Coyle", "email": "barry@example.com", "entries": 1 },
-  { "name": "Ciara Doyle", "email": "ciara@example.com", "entries": 2 },
-  { "name": "Diarmuid Egan", "email": "diarmuid@example.com", "entries": 1 },
-  { "name": "Eabha Farrell", "email": "eabha@example.com", "entries": 4 }
+  {
+    "name": "Alice Byrne",
+    "email": "alice@example.com",
+    "entries": 3
+  },
+  {
+    "name": "Barry Coyle",
+    "email": "barry@example.com",
+    "entries": 1
+  },
+  {
+    "name": "Ciara Doyle",
+    "email": "ciara@example.com",
+    "entries": 2
+  },
+  {
+    "name": "Diarmuid Egan",
+    "email": "diarmuid@example.com",
+    "entries": 1
+  },
+  {
+    "name": "Eabha Farrell",
+    "email": "eabha@example.com",
+    "entries": 4
+  },
+  {
+    "name": "Brian Malone",
+    "email": "brian.malone@eir.ie",
+    "entries": 3
+  },
+  {
+    "name": "Shivam Sood",
+    "email": "shivam.sood2@eir.ie",
+    "entries": 2
+  },
+  {
+    "name": "Callum Lynch",
+    "email": "callum.lynch@eir.ie",
+    "entries": 1
+  }
 ]

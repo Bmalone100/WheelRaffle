@@ -17,7 +17,7 @@ import {
   loadEntrants,
   resetRaffle,
   setCurrentPrize,
-  setMysteryPrize,
+  setPrizeQueue,
   spin,
 } from './api.js';
 
@@ -55,7 +55,7 @@ export default function App() {
   const [addEntrantsOpen, setAddEntrantsOpen] = useState(false);
   const [prizes, setPrizes] = useState([]);
   const [currentPrizeId, setCurrentPrizeId] = useState(null);
-  const [mysteryPrize, setMysteryPrizeFlag] = useState(false);
+  const [prizeQueue, setPrizeQueueState] = useState([]);
   const [prizePickerOpen, setPrizePickerOpen] = useState(false);
   const optionsRef = useRef(null);
 
@@ -77,7 +77,7 @@ export default function App() {
         setDisplayPool(s.pool);
         setHistory(s.history);
         setCurrentPrizeId(s.currentPrizeId || null);
-        setMysteryPrizeFlag(Boolean(s.mysteryPrize));
+        setPrizeQueueState(Array.isArray(s.prizeQueue) ? s.prizeQueue : []);
         setPrizes(p);
       })
       .catch((e) => setError(e.message))
@@ -107,11 +107,13 @@ export default function App() {
     setHistory(pendingResult.history);
     setLastWinner(pendingResult.winner);
     // A specific (non-Mystery) prize may have just sold out and been
-    // auto-cleared server-side, or simply had its stock decremented — stay
-    // in sync so the badge/picker never show stale quantities or a
+    // auto-cleared server-side, or simply had its stock decremented, and the
+    // queue has advanced (or self-pruned a now-depleted entry) — stay in
+    // sync so the badge/picker never show stale quantities or a queue/
     // selection that's no longer valid.
     setPrizes(pendingResult.prizes);
     setCurrentPrizeId(pendingResult.currentPrizeId ?? null);
+    setPrizeQueueState(Array.isArray(pendingResult.prizeQueue) ? pendingResult.prizeQueue : []);
     setPendingResult(null);
     celebrateWinner();
   }, [pendingResult]);
@@ -161,20 +163,33 @@ export default function App() {
     try {
       await setCurrentPrize(prizeId);
       setCurrentPrizeId(prizeId);
-      setMysteryPrizeFlag(false);
+      setPrizeQueueState([]);
       setPrizePickerOpen(false);
     } catch (e) {
       setError(e.message);
     }
   }, []);
 
+  // Mystery Prize is just "nothing specific armed" — clearing both the
+  // specific selection and the queue is enough to fall back to it.
   const handleSelectMystery = useCallback(async () => {
     setError('');
     try {
-      await setMysteryPrize();
+      await setCurrentPrize(null);
       setCurrentPrizeId(null);
-      setMysteryPrizeFlag(true);
+      setPrizeQueueState([]);
       setPrizePickerOpen(false);
+    } catch (e) {
+      setError(e.message);
+    }
+  }, []);
+
+  const handleSetQueue = useCallback(async (queueIds) => {
+    setError('');
+    try {
+      const result = await setPrizeQueue(queueIds);
+      setPrizeQueueState(result.prizeQueue);
+      setCurrentPrizeId(result.currentPrizeId ?? null);
     } catch (e) {
       setError(e.message);
     }
@@ -188,9 +203,10 @@ export default function App() {
   const handleDeletePrize = useCallback(
     async (id) => {
       try {
-        await deletePrize(id);
+        const result = await deletePrize(id);
         setPrizes((prev) => prev.filter((p) => p.id !== id));
         if (currentPrizeId === id) setCurrentPrizeId(null);
+        setPrizeQueueState(Array.isArray(result.prizeQueue) ? result.prizeQueue : []);
       } catch (e) {
         setError(e.message);
       }
@@ -212,11 +228,8 @@ export default function App() {
   }, []);
 
   const totalTickets = pool.reduce((sum, e) => sum + e.entries, 0);
-  const currentPrize = prizes.find((p) => p.id === currentPrizeId) || null;
-  const prizeRequired = prizes.length > 0;
-  const noPrizeArmed = prizeRequired && !mysteryPrize && !currentPrize;
-  const emptyMysteryPool = mysteryPrize && prizes.length === 0;
-  const spinBlockedByPrize = noPrizeArmed || emptyMysteryPool;
+  const queueNextPrize = prizeQueue.length > 0 ? prizes.find((p) => p.id === prizeQueue[0]) || null : null;
+  const currentPrize = queueNextPrize || prizes.find((p) => p.id === currentPrizeId) || null;
 
   let mainContent;
   if (loading) {
@@ -332,37 +345,27 @@ export default function App() {
       )}
 
       <PrizeBadge
-        mysteryPrize={mysteryPrize}
         currentPrize={currentPrize}
-        prizeRequired={prizeRequired}
+        queued={queueNextPrize != null}
+        queueLength={prizeQueue.length}
         onClick={() => setPrizePickerOpen(true)}
       />
 
       <div className="controls">
-        <button
-          className="btn btn-primary"
-          onClick={handleSpin}
-          disabled={spinning || pool.length === 0 || spinBlockedByPrize}
-        >
+        <button className="btn btn-primary" onClick={handleSpin} disabled={spinning || pool.length === 0}>
           {spinning ? 'Spinning…' : 'Spin'}
         </button>
       </div>
-      {spinBlockedByPrize && !spinning && (
-        <p className="spin-hint">
-          {emptyMysteryPool
-            ? 'Add at least one prize for Mystery Prize to draw from.'
-            : 'Choose a prize (or Mystery Prize) above before spinning.'}
-        </p>
-      )}
 
       <PrizePicker
         prizes={prizes}
         currentPrizeId={currentPrizeId}
-        mysteryPrize={mysteryPrize}
+        prizeQueue={prizeQueue}
         open={prizePickerOpen}
         onClose={() => setPrizePickerOpen(false)}
         onSelect={handleSelectPrize}
         onSelectMystery={handleSelectMystery}
+        onSetQueue={handleSetQueue}
         onAdd={handleAddPrize}
         onDelete={handleDeletePrize}
       />

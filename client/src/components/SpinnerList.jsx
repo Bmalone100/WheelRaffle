@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { seededShuffle } from '../lib/randomOrder.js';
+import { arrangeSpreadOut } from '../lib/randomOrder.js';
 
 const ROW_HEIGHT = 68;
 const VISIBLE_ROWS = 5;
@@ -14,7 +14,7 @@ function buildTicketReel(pool) {
       tickets.push({ id: e.id, name: e.name, ticketKey: `${e.id}#${i}` });
     }
   });
-  return seededShuffle(tickets, (t) => t.ticketKey);
+  return arrangeSpreadOut(tickets, (t) => t.id);
 }
 
 function emphasisFor(distance) {
