@@ -32,6 +32,57 @@ function loadEntrantsConfig() {
     .filter((e) => e.entries > 0);
 }
 
+// Raw (unfiltered, un-id'd) read/write of entrants.config.json itself, for
+// the GUI add/import flows below — these persist to the file so it stays
+// the source of truth, the same one Load Entrants and Reset read from.
+function readEntrantsConfigRaw() {
+  const raw = fs.readFileSync(CONFIG_PATH, 'utf-8');
+  const entrants = JSON.parse(raw);
+  if (!Array.isArray(entrants)) {
+    throw new Error('entrants.config.json must be a JSON array of { name, email, entries }');
+  }
+  return entrants;
+}
+
+function writeEntrantsConfigRaw(entrants) {
+  fs.writeFileSync(CONFIG_PATH, `${JSON.stringify(entrants, null, 2)}\n`);
+}
+
+// Minimal CSV parser (quoted fields with embedded commas/escaped quotes) —
+// no dependency needed for a controlled name,email,entries shape.
+function parseCsv(text) {
+  const lines = text.split(/\r\n|\n|\r/).filter((l) => l.trim().length > 0);
+  return lines.map((line) => {
+    const fields = [];
+    let cur = '';
+    let inQuotes = false;
+    for (let i = 0; i < line.length; i++) {
+      const ch = line[i];
+      if (inQuotes) {
+        if (ch === '"') {
+          if (line[i + 1] === '"') {
+            cur += '"';
+            i++;
+          } else {
+            inQuotes = false;
+          }
+        } else {
+          cur += ch;
+        }
+      } else if (ch === '"') {
+        inQuotes = true;
+      } else if (ch === ',') {
+        fields.push(cur);
+        cur = '';
+      } else {
+        cur += ch;
+      }
+    }
+    fields.push(cur);
+    return fields.map((f) => f.trim());
+  });
+}
+
 function freshState() {
   return { pool: loadEntrantsConfig(), history: [] };
 }
@@ -148,6 +199,93 @@ app.use('/api/prizes/images', express.static(PRIZE_IMAGES_DIR));
 
 app.get('/api/state', (req, res) => {
   res.json(state);
+});
+
+// Adds one entrant: persisted to entrants.config.json (so it survives a
+// Reset, same as anyone edited in by hand) and appended directly to the
+// live pool — deliberately NOT a full config reload, so it doesn't disturb
+// tickets already spun away from everyone else mid-event.
+app.post('/api/entrants', (req, res) => {
+  const name = (req.body.name || '').trim();
+  const email = (req.body.email || '').trim().toLowerCase();
+  const entries = Number.parseInt(req.body.entries, 10);
+
+  if (!name) return res.status(400).json({ error: 'Name is required.' });
+  if (!email) return res.status(400).json({ error: 'Email is required.' });
+  if (!Number.isInteger(entries) || entries < 1) {
+    return res.status(400).json({ error: 'Entries must be a whole number of at least 1.' });
+  }
+
+  let rawEntrants;
+  try {
+    rawEntrants = readEntrantsConfigRaw();
+  } catch (e) {
+    return res.status(400).json({ error: e.message });
+  }
+  if (rawEntrants.some((e) => (e.email || '').trim().toLowerCase() === email)) {
+    return res.status(400).json({ error: `An entrant with email ${email} already exists.` });
+  }
+
+  rawEntrants.push({ name, email, entries });
+  writeEntrantsConfigRaw(rawEntrants);
+
+  const newEntrant = { id: email, name, email, entries };
+  state.pool = [...state.pool, newEntrant];
+  saveState(state);
+  res.json({ pool: state.pool, added: newEntrant });
+});
+
+// Bulk version of the above from a CSV's name,email,entries rows (a header
+// row is optional and auto-detected). Invalid rows and duplicate emails are
+// skipped and reported rather than failing the whole import.
+app.post('/api/entrants/import', (req, res) => {
+  const csvText = req.body.csv;
+  if (typeof csvText !== 'string' || !csvText.trim()) {
+    return res.status(400).json({ error: 'CSV content is required.' });
+  }
+
+  const rows = parseCsv(csvText);
+  const looksLikeHeader = rows.length > 0 && rows[0].some((c) => /^(name|email|entries)$/i.test(c));
+  const dataRows = looksLikeHeader ? rows.slice(1) : rows;
+
+  let rawEntrants;
+  try {
+    rawEntrants = readEntrantsConfigRaw();
+  } catch (e) {
+    return res.status(400).json({ error: e.message });
+  }
+
+  const seenEmails = new Set(rawEntrants.map((e) => (e.email || '').trim().toLowerCase()).filter(Boolean));
+  const added = [];
+  const skipped = [];
+
+  for (const row of dataRows) {
+    const [rawName, rawEmail, rawEntries] = row;
+    const name = (rawName || '').trim();
+    const email = (rawEmail || '').trim().toLowerCase();
+    const entries = Number.parseInt(rawEntries, 10);
+
+    if (!name || !email || !Number.isInteger(entries) || entries < 1) {
+      skipped.push({ row, reason: 'Missing name/email or invalid entries.' });
+      continue;
+    }
+    if (seenEmails.has(email)) {
+      skipped.push({ row, reason: 'Duplicate email.' });
+      continue;
+    }
+    seenEmails.add(email);
+
+    rawEntrants.push({ name, email, entries });
+    added.push({ id: email, name, email, entries });
+  }
+
+  if (added.length > 0) {
+    writeEntrantsConfigRaw(rawEntrants);
+    state.pool = [...state.pool, ...added];
+    saveState(state);
+  }
+
+  res.json({ pool: state.pool, addedCount: added.length, skipped });
 });
 
 // Only prizes still in stock are selectable — same pattern as the entrant

@@ -1,6 +1,9 @@
-import { X } from 'lucide-react';
+import { useState } from 'react';
+import { UserRoundPlus, X } from 'lucide-react';
 
-export default function EntrantSidebar({ pool, open, onClose }) {
+export default function EntrantSidebar({ pool, open, onClose, onAddClick }) {
+  const [revealedId, setRevealedId] = useState(null);
+
   return (
     <>
       <div className={`sidebar-overlay ${open ? 'open' : ''}`} onClick={onClose} aria-hidden={!open} />
@@ -11,16 +14,32 @@ export default function EntrantSidebar({ pool, open, onClose }) {
             <X size={20} />
           </button>
         </div>
+
+        <button type="button" className="sidebar-add-button" onClick={onAddClick}>
+          <UserRoundPlus size={16} /> Add Entrants
+        </button>
+
         {pool.length === 0 ? (
           <p className="sidebar-empty">No entrants left in the wheel.</p>
         ) : (
           <ul className="sidebar-list">
             {pool.map((e) => (
               <li key={e.id}>
-                <span className="sidebar-name">{e.name}</span>
-                <span className="sidebar-count">
-                  {e.entries} ticket{e.entries === 1 ? '' : 's'}
-                </span>
+                <div className="sidebar-row-main">
+                  <button
+                    type="button"
+                    className="sidebar-name"
+                    onClick={() => setRevealedId(revealedId === e.id ? null : e.id)}
+                  >
+                    {e.name}
+                  </button>
+                  <span className="sidebar-count">
+                    {e.entries} ticket{e.entries === 1 ? '' : 's'}
+                  </span>
+                </div>
+                {revealedId === e.id && (
+                  <div className="sidebar-email-reveal">{e.email || 'No email on file'}</div>
+                )}
               </li>
             ))}
           </ul>

@@ -3,14 +3,17 @@ import confetti from 'canvas-confetti';
 import { AlertTriangle, Settings, Users, X } from 'lucide-react';
 import SpinnerList from './components/SpinnerList.jsx';
 import EntrantSidebar from './components/EntrantSidebar.jsx';
+import AddEntrantsModal from './components/AddEntrantsModal.jsx';
 import PrizeBadge from './components/PrizeBadge.jsx';
 import PrizePicker from './components/PrizePicker.jsx';
 import WinnerHistory from './components/WinnerHistory.jsx';
 import {
+  addEntrant,
   addPrize,
   deletePrize,
   getPrizes,
   getState,
+  importEntrantsCsv,
   loadEntrants,
   resetRaffle,
   setCurrentPrize,
@@ -49,6 +52,7 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [optionsOpen, setOptionsOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [addEntrantsOpen, setAddEntrantsOpen] = useState(false);
   const [prizes, setPrizes] = useState([]);
   const [currentPrizeId, setCurrentPrizeId] = useState(null);
   const [mysteryPrize, setMysteryPrizeFlag] = useState(false);
@@ -194,6 +198,19 @@ export default function App() {
     [currentPrizeId]
   );
 
+  const handleAddEntrant = useCallback(async (entrant) => {
+    const result = await addEntrant(entrant);
+    setPool(result.pool);
+    setDisplayPool(result.pool);
+  }, []);
+
+  const handleImportEntrants = useCallback(async (csvText) => {
+    const result = await importEntrantsCsv(csvText);
+    setPool(result.pool);
+    setDisplayPool(result.pool);
+    return result;
+  }, []);
+
   const totalTickets = pool.reduce((sum, e) => sum + e.entries, 0);
   const currentPrize = prizes.find((p) => p.id === currentPrizeId) || null;
   const prizeRequired = prizes.length > 0;
@@ -272,7 +289,19 @@ export default function App() {
         )}
       </div>
 
-      <EntrantSidebar pool={pool} open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
+      <EntrantSidebar
+        pool={pool}
+        open={sidebarOpen}
+        onClose={() => setSidebarOpen(false)}
+        onAddClick={() => setAddEntrantsOpen(true)}
+      />
+
+      <AddEntrantsModal
+        open={addEntrantsOpen}
+        onClose={() => setAddEntrantsOpen(false)}
+        onAdd={handleAddEntrant}
+        onImport={handleImportEntrants}
+      />
 
       <header className="app-header">
         <h1>{document.title}</h1>

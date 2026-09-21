@@ -27,6 +27,18 @@ Runs entirely on your machine — no cloud dependency.
   ticket counts are shown** — the winner banner and Winner History only ever show a
   name (and prize, if one's selected), never a number, so what's presented to a room
   keeps some mystery rather than telegraphing anyone's odds.
+- Click a name in that sidebar to reveal their email underneath (click again to hide
+  it) — so you know where to send a prize-winner email without it being on screen
+  the rest of the time.
+- **Add Entrants** (button at the top of that sidebar) adds people without touching
+  `entrants.config.json` by hand: either one at a time (name, email, entries — all
+  required), or by picking a CSV file, which imports immediately on selection (no
+  separate "import" click). CSV columns are `name,email,entries`; a header row is
+  optional and auto-detected. Either way, new entrants are appended to
+  `entrants.config.json` (so they survive a Reset) *and* added straight to the live
+  pool — this does not touch anyone else's already-spun-away tickets, unlike Load
+  Entrants' full reload. Duplicate emails and invalid rows are rejected (or skipped
+  and reported, for CSV) rather than silently overwriting an existing entrant.
 
 ## Prizes
 
@@ -95,8 +107,10 @@ npm run dev --prefix client   # terminal 2: Vite on :5173
 
 ## Editing entrants
 
-Just edit `entrants.config.json` and click **Load Entrants** (gear icon, top right) in
-the app to refresh ticket counts without losing winner history — or **Reset** for a
+Easiest: use **Add Entrants** in the entrants sidebar (people icon, top left) — see
+above. You can still hand-edit `entrants.config.json` directly too (e.g. to change
+someone's ticket count); after doing so, click **Load Entrants** (gear icon, top
+right) to refresh from the file without losing winner history, or **Reset** for a
 full fresh start. Example shape:
 
 ```json
@@ -106,8 +120,9 @@ full fresh start. Example shape:
 ]
 ```
 
-`email` is optional but recommended — it's used as the unique id when two entrants
-share a name.
+`email` is used as each entrant's unique id (and is how you know who to contact
+about a prize) — the Add Entrants GUI requires it, though hand-editing the JSON
+file doesn't enforce that.
 
 ## Theme
 
@@ -124,9 +139,11 @@ codes if you have eir's brand guide handy.
 entrants.config.json   # you edit this
 server/                # Express API + persisted state (server/data/, gitignored)
 client/                # React + Vite frontend
-  src/components/SpinnerList.jsx    # the weighted, decelerating name reel
-  src/components/EntrantSidebar.jsx # pull-out list of current entrants + ticket counts
-  src/components/PrizePicker.jsx    # add/select/delete prizes, Mystery Prize
-  src/components/PrizeBadge.jsx     # the "Drawing for..." badge above Spin
-  src/lib/randomOrder.js            # deterministic shuffle shared by the reel
+  src/components/SpinnerList.jsx      # the weighted, decelerating name reel
+  src/components/EntrantSidebar.jsx   # entrant list, click-to-reveal email, Add Entrants
+  src/components/AddEntrantsModal.jsx # single-entrant form + CSV import
+  src/components/PrizePicker.jsx      # add/select/delete prizes, Mystery Prize
+  src/components/PrizeBadge.jsx       # the "Drawing for..." badge above Spin
+  src/components/FilePicker.jsx       # shared single-control file input (image/CSV)
+  src/lib/randomOrder.js              # deterministic shuffle shared by the reel
 ```

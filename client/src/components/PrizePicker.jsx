@@ -1,5 +1,6 @@
-import { useRef, useState } from 'react';
-import { Dices, Plus, Trash2, X } from 'lucide-react';
+import { useState } from 'react';
+import { Dices, ImageUp, Plus, Trash2, X } from 'lucide-react';
+import FilePicker from './FilePicker.jsx';
 
 export default function PrizePicker({
   prizes,
@@ -15,9 +16,9 @@ export default function PrizePicker({
   const [name, setName] = useState('');
   const [quantity, setQuantity] = useState('1');
   const [file, setFile] = useState(null);
+  const [resetToken, setResetToken] = useState(0);
   const [adding, setAdding] = useState(false);
   const [error, setError] = useState('');
-  const fileInputRef = useRef(null);
 
   if (!open) return null;
 
@@ -43,7 +44,7 @@ export default function PrizePicker({
       setName('');
       setQuantity('1');
       setFile(null);
-      if (fileInputRef.current) fileInputRef.current.value = '';
+      setResetToken((t) => t + 1);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -96,16 +97,16 @@ export default function PrizePicker({
           </div>
         )}
 
-        <form className="prize-add-form" onSubmit={handleAdd}>
+        <form className="modal-form" onSubmit={handleAdd}>
           <h3>Add a prize</h3>
           <input
             type="text"
             placeholder="Prize name"
             value={name}
             onChange={(e) => setName(e.target.value)}
-            className="prize-name-input"
+            className="modal-text-input"
           />
-          <label className="prize-qty-label">
+          <label className="modal-field-label">
             Quantity
             <input
               type="number"
@@ -113,17 +114,18 @@ export default function PrizePicker({
               step="1"
               value={quantity}
               onChange={(e) => setQuantity(e.target.value)}
-              className="prize-qty-input"
+              className="modal-number-input"
             />
           </label>
-          <input
-            type="file"
+          <FilePicker
             accept="image/*"
-            ref={fileInputRef}
-            onChange={(e) => setFile(e.target.files[0] || null)}
-            className="prize-file-input"
+            file={file}
+            onChange={setFile}
+            placeholder="Choose a prize image…"
+            icon={<ImageUp size={16} />}
+            resetToken={resetToken}
           />
-          {error && <p className="prize-add-error">{error}</p>}
+          {error && <p className="modal-form-error">{error}</p>}
           <button type="submit" className="btn btn-secondary" disabled={adding}>
             {adding ? (
               'Adding…'

@@ -35,3 +35,7 @@ export const setCurrentPrize = (prizeId) =>
   request('/current-prize', { method: 'POST', body: JSON.stringify({ prizeId }) });
 export const setMysteryPrize = () =>
   request('/current-prize', { method: 'POST', body: JSON.stringify({ mystery: true }) });
+
+export const addEntrant = (entrant) => request('/entrants', { method: 'POST', body: JSON.stringify(entrant) });
+export const importEntrantsCsv = (csv) =>
+  request('/entrants/import', { method: 'POST', body: JSON.stringify({ csv }) });
