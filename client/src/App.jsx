@@ -129,6 +129,38 @@ export default function App() {
 
   const totalTickets = pool.reduce((sum, e) => sum + e.entries, 0);
 
+  let mainContent;
+  if (loading) {
+    mainContent = <p>Loading…</p>;
+  } else if (displayPool.length === 0) {
+    mainContent = (
+      <div className="banner">
+        Everyone&rsquo;s won! Edit entrants.config.json, then use Load Entrants or Reset (gear icon,
+        top right) to start again.
+      </div>
+    );
+  } else {
+    mainContent = (
+      <SpinnerList
+        pool={displayPool}
+        spinning={spinning}
+        winnerId={winnerId}
+        spinToken={spinToken}
+        onSpinComplete={handleSpinComplete}
+      />
+    );
+  }
+
+  let winnerMessage = null;
+  if (lastWinner) {
+    if (lastWinner.entriesRemaining > 0) {
+      const ticketWord = lastWinner.entriesRemaining === 1 ? 'ticket' : 'tickets';
+      winnerMessage = `${lastWinner.entriesRemaining} ${ticketWord} still in the draw.`;
+    } else {
+      winnerMessage = 'That was their last ticket — removed from the draw.';
+    }
+  }
+
   return (
     <div className="app">
       <button
@@ -190,29 +222,11 @@ export default function App() {
 
       {error && <div className="banner banner-error">{error}</div>}
 
-      {loading ? (
-        <p>Loading…</p>
-      ) : displayPool.length === 0 ? (
-        <div className="banner">
-          Everyone&rsquo;s won! Edit entrants.config.json, then use Load Entrants or Reset (gear icon,
-          top right) to start again.
-        </div>
-      ) : (
-        <SpinnerList
-          pool={displayPool}
-          spinning={spinning}
-          winnerId={winnerId}
-          spinToken={spinToken}
-          onSpinComplete={handleSpinComplete}
-        />
-      )}
+      {mainContent}
 
       {lastWinner && !spinning && (
         <div className="winner-banner">
-          🎉 <strong>{lastWinner.name}</strong> wins!{' '}
-          {lastWinner.entriesRemaining > 0
-            ? `${lastWinner.entriesRemaining} ticket${lastWinner.entriesRemaining === 1 ? '' : 's'} still in the draw.`
-            : 'That was their last ticket — removed from the draw.'}
+          🎉 <strong>{lastWinner.name}</strong> wins! {winnerMessage}
         </div>
       )}
 

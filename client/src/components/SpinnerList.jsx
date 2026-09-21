@@ -17,17 +17,26 @@ function buildTicketReel(pool) {
   return seededShuffle(tickets, (t) => t.ticketKey);
 }
 
+function emphasisFor(distance) {
+  if (distance === 0) return 'is-current';
+  if (distance === 1) return 'is-near';
+  return '';
+}
+
 // A scrolling name reel for raffles with too many tickets to keep every
 // wheel slice legible — same weighted-by-tickets randomness, same
 // frozen-pool correctness pattern, just rendered as a decelerating list
 // instead of a pie.
 export default function SpinnerList({ pool, spinning, winnerId, spinToken, onSpinComplete }) {
-  const [offset, setOffset] = useState(0);
-  const [repeats, setRepeats] = useState(BASE_REPEATS);
+  // offset (scroll position, px) and repeats (how many times `tickets` is
+  // tiled to cover that offset) always change together, so they're one
+  // state update per effect rather than two separate setState calls.
+  const [reel, setReel] = useState({ offset: 0, repeats: BASE_REPEATS });
   const prevToken = useRef(spinToken);
 
   const tickets = useMemo(() => buildTicketReel(pool), [pool]);
   const centerRow = Math.floor(VISIBLE_ROWS / 2);
+  const { offset, repeats } = reel;
 
   // Every time a new spin is requested, scroll forward by at least
   // MIN_ROWS_TRAVEL rows from wherever the reel currently rests, landing on
@@ -46,6 +55,10 @@ export default function SpinnerList({ pool, spinning, winnerId, spinToken, onSpi
     });
     if (winnerIndices.length === 0) return;
 
+    // A person can hold several tickets scattered through the reel; which
+    // specific one we land on is cosmetic (any of them identifies the same
+    // winner), so Math.random's non-cryptographic randomness is fine here.
+    // eslint-disable-next-line sonarjs/pseudo-random
     const chosenLocalIndex = winnerIndices[Math.floor(Math.random() * winnerIndices.length)];
     const n = tickets.length;
     const currentIndex = Math.round(centerRow - offset / ROW_HEIGHT);
@@ -54,8 +67,16 @@ export default function SpinnerList({ pool, spinning, winnerId, spinToken, onSpi
     const rem = (((targetIndex - chosenLocalIndex) % n) + n) % n;
     if (rem !== 0) targetIndex += n - rem;
 
-    setRepeats(Math.ceil((targetIndex + 1) / n) + 1);
-    setOffset(-(targetIndex * ROW_HEIGHT) + centerRow * ROW_HEIGHT);
+    // This effect exists specifically to react to an external trigger
+    // (spinToken, an imperative "start a new animation now" signal from the
+    // parent) and roll a one-time random landing spot — not to derive state
+    // from props, which is what this rule guards against. That computation
+    // is intentionally impure (Math.random), so it can't move into render.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setReel({
+      offset: -(targetIndex * ROW_HEIGHT) + centerRow * ROW_HEIGHT,
+      repeats: Math.ceil((targetIndex + 1) / n) + 1,
+    });
   }, [spinToken, winnerId, tickets, centerRow, offset]);
 
   // Once at rest, silently collapse the reel back to a low lap number so lap
@@ -70,12 +91,15 @@ export default function SpinnerList({ pool, spinning, winnerId, spinToken, onSpi
     if (currentIndex < (REST_PARK_LAP + 1) * n) return;
     const localIndex = ((currentIndex % n) + n) % n;
     const rebasedIndex = REST_PARK_LAP * n + localIndex;
-    setOffset(-(rebasedIndex * ROW_HEIGHT) + centerRow * ROW_HEIGHT);
-    setRepeats(BASE_REPEATS);
+    // Purely a housekeeping rebase of this component's own internal scroll
+    // position once idle — no props/state are being "derived" here, so
+    // moving it out of an effect isn't applicable.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setReel({ offset: -(rebasedIndex * ROW_HEIGHT) + centerRow * ROW_HEIGHT, repeats: BASE_REPEATS });
   }, [spinning, tickets, offset, centerRow]);
 
-  const reel = [];
-  for (let r = 0; r < repeats; r++) reel.push(...tickets);
+  const reelRows = [];
+  for (let r = 0; r < repeats; r++) reelRows.push(...tickets);
 
   // Which reel row currently sits at the selector, so it (and its nearest
   // neighbours) can be visually lifted — only meaningful once the track is
@@ -101,15 +125,11 @@ export default function SpinnerList({ pool, spinning, winnerId, spinToken, onSpi
           if (spinning) onSpinComplete();
         }}
       >
-        {reel.map((t, i) => {
-          const distance = Math.abs(i - centerReelIndex);
-          const emphasis = distance === 0 ? 'is-current' : distance === 1 ? 'is-near' : '';
-          return (
-            <div key={i} className={`spinner-row ${emphasis}`} style={{ height: ROW_HEIGHT }}>
-              {t.name}
-            </div>
-          );
-        })}
+        {reelRows.map((t, i) => (
+          <div key={i} className={`spinner-row ${emphasisFor(Math.abs(i - centerReelIndex))}`} style={{ height: ROW_HEIGHT }}>
+            {t.name}
+          </div>
+        ))}
       </div>
     </div>
   );

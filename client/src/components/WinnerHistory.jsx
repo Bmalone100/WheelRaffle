@@ -1,3 +1,9 @@
+function describeOutcome(entriesRemaining) {
+  if (entriesRemaining <= 0) return 'removed from wheel';
+  const ticketWord = entriesRemaining === 1 ? 'ticket' : 'tickets';
+  return `${entriesRemaining} ${ticketWord} left`;
+}
+
 export default function WinnerHistory({ history }) {
   if (history.length === 0) {
     return (
@@ -16,10 +22,7 @@ export default function WinnerHistory({ history }) {
           <li key={`${h.id}-${h.wonAt}-${i}`}>
             <span className="history-name">{h.name}</span>
             <span className="history-meta">
-              {new Date(h.wonAt).toLocaleString()} ·{' '}
-              {h.entriesRemaining > 0
-                ? `${h.entriesRemaining} ticket${h.entriesRemaining === 1 ? '' : 's'} left`
-                : 'removed from wheel'}
+              {new Date(h.wonAt).toLocaleString()} · {describeOutcome(h.entriesRemaining)}
             </span>
           </li>
         ))}

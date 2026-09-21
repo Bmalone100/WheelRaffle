@@ -65,6 +65,7 @@ let state = loadState();
 saveState(state);
 
 const app = express();
+app.disable('x-powered-by'); // don't advertise the framework/version to clients
 app.use(express.json());
 
 app.get('/api/state', (req, res) => {
@@ -81,6 +82,10 @@ app.post('/api/spin', (req, res) => {
 
   const poolBefore = pool.map((e) => ({ ...e }));
 
+  // Weighted draw for a local, organizer-run raffle — not a security context
+  // (no secrets/tokens involved), so Math.random's non-cryptographic
+  // randomness is an appropriate, standard choice here.
+  // eslint-disable-next-line sonarjs/pseudo-random
   let roll = Math.random() * totalWeight;
   let winner = null;
   for (const entrant of pool) {
