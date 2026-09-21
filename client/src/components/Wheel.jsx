@@ -74,20 +74,34 @@ export function buildSegments(pool) {
   });
 }
 
-// Sizes a label to fill most of its wedge: start from the arc's angular
-// width (how tall text can be without touching the slice edges), then shrink
-// to fit the available centre-to-rim run if the name is long. Returns null
+// Initials-style abbreviation: "Alice Byrne" -> "AB", a single-word name
+// keeps its first two letters. Short and roughly equal-length labels are
+// much easier to fit edge-to-edge along a slice's rim than a full name.
+function abbreviateName(name) {
+  const words = name.trim().split(/\s+/).filter(Boolean);
+  if (words.length <= 1) {
+    return (words[0] || '').slice(0, 2).toUpperCase();
+  }
+  return words
+    .map((w) => w[0])
+    .join('')
+    .toUpperCase()
+    .slice(0, 4);
+}
+
+// Sizes a label to run edge-to-edge along the slice's rim (tangentially, at
+// labelRadius): fits the available chord width at that radius, capped so it
+// never grows tall enough to poke past the wedge boundary. Returns null
 // when even the floor size wouldn't be readable — caller skips the label and
 // leans on the hover tooltip instead.
-function fitLabelFontSize(ctx, label, sweepDeg, radius) {
+function fitAbbrevFontSize(ctx, label, sweepDeg, radius, labelRadius) {
   const sweepRad = (sweepDeg * Math.PI) / 180;
-  const arcWidth = 2 * (radius * 0.72) * Math.sin(sweepRad / 2);
-  const innerGap = radius * 0.14;
-  const available = radius - 14 - innerGap;
+  const chordWidth = 2 * labelRadius * Math.sin(sweepRad / 2);
+  const available = chordWidth * 0.86;
 
-  let size = Math.max(MIN_READABLE_FONT, Math.min(arcWidth * 0.82, radius * 0.2));
+  let size = Math.max(MIN_READABLE_FONT, Math.min(radius * 0.16, available));
 
-  ctx.font = `700 ${size}px 'Segoe UI', sans-serif`;
+  ctx.font = `800 ${size}px 'Segoe UI', sans-serif`;
   const width = ctx.measureText(label).width;
   if (width > available && width > 0) {
     size *= available / width;
@@ -120,13 +134,14 @@ function drawWheel(canvas, segments) {
 
     const sweep = seg.endAngle - seg.startAngle;
     const mid = ((seg.startAngle + seg.endAngle) / 2 - 90) * (Math.PI / 180);
-    const label = seg.name.length > 28 ? `${seg.name.slice(0, 26)}…` : seg.name;
-    const fontSize = fitLabelFontSize(ctx, label, sweep, radius);
+    const label = abbreviateName(seg.name);
+    const labelRadius = radius * 0.82;
+    const fontSize = fitAbbrevFontSize(ctx, label, sweep, radius, labelRadius);
     if (fontSize == null) return;
 
-    // Text runs along the slice's own radial line (centre -> rim), flipped
-    // upright on the left half so it never renders upside down.
-    const flip = Math.cos(mid) < 0;
+    // Text sits near the rim, running tangentially edge-to-edge across the
+    // slice, flipped upright on the bottom half so it never reads upside down.
+    const flip = Math.sin(mid) > 0;
 
     ctx.save();
     ctx.beginPath();
@@ -135,20 +150,13 @@ function drawWheel(canvas, segments) {
     ctx.closePath();
     ctx.clip();
 
-    ctx.translate(radius, radius);
-    ctx.rotate(flip ? mid + Math.PI : mid);
+    ctx.translate(radius + Math.cos(mid) * labelRadius, radius + Math.sin(mid) * labelRadius);
+    ctx.rotate(flip ? mid - Math.PI / 2 : mid + Math.PI / 2);
     ctx.fillStyle = seg.textColor;
+    ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.font = `700 ${fontSize}px 'Segoe UI', sans-serif`;
-
-    const innerGap = radius * 0.14;
-    if (flip) {
-      ctx.textAlign = 'right';
-      ctx.fillText(label, -innerGap, 0);
-    } else {
-      ctx.textAlign = 'left';
-      ctx.fillText(label, innerGap, 0);
-    }
+    ctx.font = `800 ${fontSize}px 'Segoe UI', sans-serif`;
+    ctx.fillText(label, 0, 0);
     ctx.restore();
   });
 }
