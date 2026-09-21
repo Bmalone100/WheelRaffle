@@ -12,9 +12,12 @@ Runs entirely on your machine — no cloud dependency.
   `server/data/state.json` (gitignored) so state survives closing the app.
 - Each spin removes **one ticket** from the winner. If they had more entries, they
   stay in the draw with one fewer; once they hit zero, they drop out entirely.
-- **Reset Raffle** (in the gear-icon menu, top right) re-reads `entrants.config.json`
-  from disk and clears the in-app winner history — use this after editing the config
-  file, or to start a fresh round. It does **not** touch the spin log (see below).
+- The gear-icon menu (top right) has two distinct actions:
+  - **Load Entrants** re-reads `entrants.config.json` and refreshes ticket counts,
+    but keeps the winner history — use this after editing the config file mid-event.
+  - **Reset** wipes the current board *and* the in-app winner history, then reloads
+    fresh from `entrants.config.json` — a full restart. It does **not** touch the
+    spin log (see below); every past spin is already permanently recorded there.
 - The draw is a scrolling name reel weighted by ticket count (someone with 3 entries
   appears 3 times, scattered through the reel) — a pie wheel can't keep hundreds of
   individual slices legible at any sane page size, so this stays fully readable
@@ -25,10 +28,10 @@ Runs entirely on your machine — no cloud dependency.
 ## Spin log
 
 Every spin appends a row to `server/data/spins.csv` (gitignored): `datetime,name,email`.
-Unlike the in-app Winner History panel, this log is never cleared by Reset Raffle —
-it's a running audit trail across the whole life of the app. Grab it anytime via the
-**Download spin log (CSV)** link in the gear-icon menu, or `GET /api/log`, or just open
-the file directly in `server/data/`.
+Unlike the in-app Winner History panel, this log is never cleared by Load Entrants or
+Reset — it's a running audit trail across the whole life of the app. Grab it anytime
+via the **Download spin log (CSV)** link in the gear-icon menu, or `GET /api/log`, or
+just open the file directly in `server/data/`.
 
 ## Running it
 
@@ -57,8 +60,9 @@ npm run dev --prefix client   # terminal 2: Vite on :5173
 
 ## Editing entrants
 
-Just edit `entrants.config.json` and click **Reset Raffle** (gear icon, top right) in
-the app — this reloads from the file and clears winner history. Example shape:
+Just edit `entrants.config.json` and click **Load Entrants** (gear icon, top right) in
+the app to refresh ticket counts without losing winner history — or **Reset** for a
+full fresh start. Example shape:
 
 ```json
 [

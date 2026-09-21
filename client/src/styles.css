@@ -79,10 +79,25 @@ body {
   align-items: center;
   justify-content: center;
   font-size: 1.3rem;
-  font-weight: 700;
-  color: var(--ink);
+  font-weight: 600;
+  color: #9a8ba6;
   text-align: center;
   padding: 0 16px;
+  transform: scale(0.94);
+  transition: transform 0.25s ease, color 0.25s ease, font-weight 0.25s ease;
+}
+
+.spinner-row.is-near {
+  color: var(--heather-light);
+  font-weight: 700;
+  transform: scale(1);
+}
+
+.spinner-row.is-current {
+  color: var(--heather-dark);
+  font-weight: 800;
+  transform: scale(1.12);
+  text-shadow: 0 3px 10px rgba(92, 58, 122, 0.25);
 }
 
 .controls {
@@ -96,10 +111,12 @@ body {
   justify-content: center;
   width: 44px;
   height: 44px;
+  aspect-ratio: 1;
   border: 1px solid var(--wheat-dark);
   background: var(--card-bg);
   color: var(--heather-dark);
   border-radius: 50%;
+  box-shadow: 0 6px 16px rgba(61, 37, 85, 0.18);
   cursor: pointer;
   transition: background 0.15s ease, transform 0.15s ease;
 }
@@ -109,11 +126,17 @@ body {
   transform: translateY(-1px);
 }
 
+.icon-button-small {
+  width: 28px;
+  height: 28px;
+  box-shadow: none;
+  border: none;
+}
+
 .corner-button {
   position: fixed;
   top: 20px;
   z-index: 30;
-  box-shadow: 0 6px 16px rgba(61, 37, 85, 0.18);
 }
 
 .corner-left {
@@ -133,15 +156,16 @@ body {
   top: calc(100% + 8px);
   right: 0;
   background: var(--card-bg);
-  border-radius: 14px;
-  padding: 14px;
+  border-radius: 16px;
+  padding: 16px;
   box-shadow: 0 10px 24px rgba(61, 37, 85, 0.25);
   z-index: 10;
   white-space: nowrap;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
   align-items: stretch;
+  min-width: 260px;
 }
 
 .btn {
@@ -174,15 +198,58 @@ body {
   color: var(--heather-dark);
 }
 
+.btn-danger {
+  background: #fff;
+  color: var(--error);
+  border: 1.5px solid var(--error);
+}
+
+.btn-danger:not(:disabled):hover {
+  background: #fbeae8;
+}
+
 .log-link {
   color: var(--heather);
   font-size: 0.9rem;
   text-decoration: underline;
   text-align: center;
+  margin-top: 4px;
 }
 
 .log-link:hover {
   color: var(--heather-dark);
+}
+
+.options-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+
+.options-panel-header h2 {
+  margin: 0;
+  color: var(--heather-dark);
+  font-size: 1.05rem;
+}
+
+.options-hint {
+  margin: -2px 0 4px;
+  font-size: 0.8rem;
+  color: #7c6c88;
+  white-space: normal;
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+}
+
+.options-hint-warning {
+  color: var(--error);
+}
+
+.options-hint-warning svg {
+  flex-shrink: 0;
+  margin-top: 1px;
 }
 
 .winner-banner {

@@ -123,6 +123,21 @@ app.get('/api/log', (req, res) => {
   res.send(content);
 });
 
+// Reloads entrants.config.json into the pool but keeps the existing winner
+// history — for adding/editing entrants mid-event without losing the round.
+app.post('/api/load-entrants', (req, res) => {
+  try {
+    state = { pool: loadEntrantsConfig(), history: state.history };
+  } catch (e) {
+    return res.status(400).json({ error: e.message });
+  }
+  saveState(state);
+  res.json(state);
+});
+
+// Full wipe: reloads entrants.config.json AND clears winner history. The
+// spin log (appendSpinLog above) already has every past spin permanently
+// recorded and is untouched by this.
 app.post('/api/reset', (req, res) => {
   try {
     state = freshState();

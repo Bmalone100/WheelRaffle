@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import confetti from 'canvas-confetti';
-import { Settings, Users } from 'lucide-react';
+import { AlertTriangle, Settings, Users, X } from 'lucide-react';
 import SpinnerList from './components/SpinnerList.jsx';
 import EntrantSidebar from './components/EntrantSidebar.jsx';
 import WinnerHistory from './components/WinnerHistory.jsx';
-import { getState, resetRaffle, spin } from './api.js';
+import { getState, loadEntrants, resetRaffle, spin } from './api.js';
 
 const CONFETTI_COLORS = ['#5C3A7A', '#F5DEB3', '#e63946', '#43aa8b', '#277da1'];
 
@@ -87,11 +87,29 @@ export default function App() {
     celebrateWinner();
   }, [pendingResult]);
 
+  const handleLoadEntrants = useCallback(async () => {
+    if (spinning) return;
+    if (!window.confirm('Reload entrants.config.json? Ticket counts will refresh from the file; winner history is kept.')) {
+      return;
+    }
+    setError('');
+    setLastWinner(null);
+    try {
+      const s = await loadEntrants();
+      setPool(s.pool);
+      setDisplayPool(s.pool);
+      setHistory(s.history);
+      setOptionsOpen(false);
+    } catch (e) {
+      setError(e.message);
+    }
+  }, [spinning]);
+
   const handleReset = useCallback(async () => {
     if (spinning) return;
     if (
       !window.confirm(
-        'Reset the raffle? This reloads everyone from entrants.config.json and clears winner history.'
+        'Reset the whole raffle? This wipes the current board and the winner history shown in the app, and reloads everyone fresh from entrants.config.json. Every past spin is already permanently recorded in the spin log (CSV), so nothing is actually lost — but this cannot be undone in the app itself.'
       )
     ) {
       return;
@@ -134,9 +152,25 @@ export default function App() {
         </button>
         {optionsOpen && (
           <div className="options-panel">
-            <button className="btn btn-secondary" onClick={handleReset} disabled={spinning}>
-              Reset Raffle
+            <div className="options-panel-header">
+              <h2>Options</h2>
+              <button className="icon-button icon-button-small" onClick={() => setOptionsOpen(false)} aria-label="Close options">
+                <X size={16} />
+              </button>
+            </div>
+
+            <button className="btn btn-secondary" onClick={handleLoadEntrants} disabled={spinning}>
+              Load Entrants
             </button>
+            <p className="options-hint">Reloads entrants.config.json. Keeps winner history.</p>
+
+            <button className="btn btn-danger" onClick={handleReset} disabled={spinning}>
+              Reset
+            </button>
+            <p className="options-hint options-hint-warning">
+              <AlertTriangle size={14} /> Wipes the current board and history. Past spins stay in the log.
+            </p>
+
             <a className="log-link" href="/api/log" download="wheelraffle-spins.csv">
               Download spin log (CSV)
             </a>
@@ -160,7 +194,8 @@ export default function App() {
         <p>Loading…</p>
       ) : displayPool.length === 0 ? (
         <div className="banner">
-          Everyone&rsquo;s won! Edit entrants.config.json and hit Reset Raffle to start again.
+          Everyone&rsquo;s won! Edit entrants.config.json, then use Load Entrants or Reset (gear icon,
+          top right) to start again.
         </div>
       ) : (
         <SpinnerList

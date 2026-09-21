@@ -14,4 +14,5 @@ async function request(path, options) {
 
 export const getState = () => request('/state');
 export const spin = () => request('/spin', { method: 'POST' });
+export const loadEntrants = () => request('/load-entrants', { method: 'POST' });
 export const resetRaffle = () => request('/reset', { method: 'POST' });
