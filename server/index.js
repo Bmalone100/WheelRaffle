@@ -7,6 +7,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
 const CONFIG_PATH = path.join(ROOT, 'entrants.config.json');
 const STATE_PATH = path.join(__dirname, 'data', 'state.json');
+const LOG_PATH = path.join(__dirname, 'data', 'spins.csv');
 const PORT = process.env.PORT || 4000;
 
 function loadEntrantsConfig() {
@@ -43,6 +44,21 @@ function loadState() {
 function saveState(next) {
   fs.mkdirSync(path.dirname(STATE_PATH), { recursive: true });
   fs.writeFileSync(STATE_PATH, JSON.stringify(next, null, 2));
+}
+
+function csvField(value) {
+  const str = String(value ?? '');
+  return /[",\n]/.test(str) ? `"${str.replace(/"/g, '""')}"` : str;
+}
+
+// Append-only audit trail of every spin, independent of state.json/history —
+// a Reset Raffle clears the current round but never touches this log.
+function appendSpinLog(entry) {
+  fs.mkdirSync(path.dirname(LOG_PATH), { recursive: true });
+  if (!fs.existsSync(LOG_PATH)) {
+    fs.writeFileSync(LOG_PATH, 'datetime,name,email\n');
+  }
+  fs.appendFileSync(LOG_PATH, `${csvField(entry.wonAt)},${csvField(entry.name)},${csvField(entry.email)}\n`);
 }
 
 let state = loadState();
@@ -90,6 +106,7 @@ app.post('/api/spin', (req, res) => {
   state.pool = pool.filter((e) => e.entries > 0);
 
   saveState(state);
+  appendSpinLog(historyEntry);
 
   res.json({
     winner: { id: winner.id, name: winner.name, email: winner.email, entriesRemaining },
@@ -97,6 +114,13 @@ app.post('/api/spin', (req, res) => {
     poolAfter: state.pool,
     history: state.history,
   });
+});
+
+app.get('/api/log', (req, res) => {
+  const content = fs.existsSync(LOG_PATH) ? fs.readFileSync(LOG_PATH, 'utf-8') : 'datetime,name,email\n';
+  res.setHeader('Content-Type', 'text/csv');
+  res.setHeader('Content-Disposition', 'attachment; filename="wheelraffle-spins.csv"');
+  res.send(content);
 });
 
 app.post('/api/reset', (req, res) => {

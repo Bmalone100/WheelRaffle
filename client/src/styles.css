@@ -111,6 +111,17 @@ body {
   color: var(--heather-dark);
 }
 
+.log-link {
+  color: var(--heather);
+  font-size: 0.9rem;
+  text-decoration: underline;
+  margin-top: -8px;
+}
+
+.log-link:hover {
+  color: var(--heather-dark);
+}
+
 .winner-banner {
   background: var(--wheat-light);
   border: 2px solid var(--heather);

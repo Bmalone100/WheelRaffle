@@ -30,7 +30,10 @@ export default function App() {
     try {
       const result = await spin();
       const segments = buildSegments(result.poolBefore);
-      const winnerSegment = segments.find((s) => s.id === result.winner.id);
+      // A person can hold several ticket-slices scattered around the wheel now,
+      // so pick a random one of theirs to spin toward rather than assuming one match.
+      const candidates = segments.filter((s) => s.id === result.winner.id);
+      const winnerSegment = candidates[Math.floor(Math.random() * candidates.length)];
       const spread = winnerSegment.endAngle - winnerSegment.startAngle;
       const margin = spread * 0.15;
       const pointInSegment =
@@ -120,6 +123,10 @@ export default function App() {
           Reset Raffle
         </button>
       </div>
+
+      <a className="log-link" href="/api/log" download="wheelraffle-spins.csv">
+        Download spin log (CSV)
+      </a>
 
       <WinnerHistory history={history} />
     </div>
