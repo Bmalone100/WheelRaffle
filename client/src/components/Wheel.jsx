@@ -74,19 +74,16 @@ export function buildSegments(pool) {
   });
 }
 
-// Initials-style abbreviation: "Alice Byrne" -> "AB", a single-word name
-// keeps its first two letters. Short and roughly equal-length labels are
-// much easier to fit edge-to-edge along a slice's rim than a full name.
+// "Brian Malone" -> "B.Malone": first-name initial plus full surname, which
+// stays identifiable at a glance while still being far shorter than the
+// full name. A single-word name is left as-is (nothing to abbreviate).
 function abbreviateName(name) {
   const words = name.trim().split(/\s+/).filter(Boolean);
   if (words.length <= 1) {
-    return (words[0] || '').slice(0, 2).toUpperCase();
+    return words[0] || '';
   }
-  return words
-    .map((w) => w[0])
-    .join('')
-    .toUpperCase()
-    .slice(0, 4);
+  const surname = words[words.length - 1];
+  return `${words[0][0].toUpperCase()}.${surname}`;
 }
 
 // Sizes a label to run edge-to-edge along the slice's rim (tangentially, at

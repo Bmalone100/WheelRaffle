@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import confetti from 'canvas-confetti';
 import Wheel, { buildSegments } from './components/Wheel.jsx';
 import WinnerHistory from './components/WinnerHistory.jsx';
@@ -26,6 +26,19 @@ export default function App() {
   const [lastWinner, setLastWinner] = useState(null);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
+  const [optionsOpen, setOptionsOpen] = useState(false);
+  const optionsRef = useRef(null);
+
+  useEffect(() => {
+    if (!optionsOpen) return;
+    const handleClickOutside = (e) => {
+      if (optionsRef.current && !optionsRef.current.contains(e.target)) {
+        setOptionsOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [optionsOpen]);
 
   useEffect(() => {
     getState()
@@ -92,6 +105,7 @@ export default function App() {
       setPool(s.pool);
       setHistory(s.history);
       setRotation(0);
+      setOptionsOpen(false);
     } catch (e) {
       setError(e.message);
     }
@@ -134,9 +148,23 @@ export default function App() {
         <button className="btn btn-primary" onClick={handleSpin} disabled={spinning || pool.length === 0}>
           {spinning ? 'Spinning…' : 'Spin the Wheel'}
         </button>
-        <button className="btn btn-secondary" onClick={handleReset} disabled={spinning}>
-          Reset Raffle
-        </button>
+        <div className="options-menu" ref={optionsRef}>
+          <button
+            type="button"
+            className="options-toggle"
+            onClick={() => setOptionsOpen((v) => !v)}
+            aria-expanded={optionsOpen}
+          >
+            Options {optionsOpen ? '▲' : '▾'}
+          </button>
+          {optionsOpen && (
+            <div className="options-panel">
+              <button className="btn btn-secondary" onClick={handleReset} disabled={spinning}>
+                Reset Raffle
+              </button>
+            </div>
+          )}
+        </div>
       </div>
 
       <a className="log-link" href="/api/log" download="wheelraffle-spins.csv">
