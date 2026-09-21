@@ -1,7 +1,21 @@
 import { useCallback, useEffect, useState } from 'react';
+import confetti from 'canvas-confetti';
 import Wheel, { buildSegments } from './components/Wheel.jsx';
 import WinnerHistory from './components/WinnerHistory.jsx';
 import { getState, resetRaffle, spin } from './api.js';
+
+const CONFETTI_COLORS = ['#5C3A7A', '#F5DEB3', '#e63946', '#43aa8b', '#277da1'];
+
+function celebrateWinner() {
+  const duration = 1800;
+  const end = Date.now() + duration;
+  (function frame() {
+    confetti({ particleCount: 4, angle: 60, spread: 65, origin: { x: 0, y: 0.6 }, colors: CONFETTI_COLORS });
+    confetti({ particleCount: 4, angle: 120, spread: 65, origin: { x: 1, y: 0.6 }, colors: CONFETTI_COLORS });
+    if (Date.now() < end) requestAnimationFrame(frame);
+  })();
+  confetti({ particleCount: 120, spread: 100, origin: { y: 0.5 }, colors: CONFETTI_COLORS });
+}
 
 export default function App() {
   const [pool, setPool] = useState([]);
@@ -59,6 +73,7 @@ export default function App() {
     setHistory(pendingResult.history);
     setLastWinner(pendingResult.winner);
     setPendingResult(null);
+    celebrateWinner();
   }, [pendingResult]);
 
   const handleReset = useCallback(async () => {

@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 
+const MIN_READABLE_FONT = 10;
+
 // Deterministic PRNG so the wheel's slice order stays in sync between what's
 // drawn and what App.jsx computes the winning angle from, without either side
 // needing to share live state — same ticket set in, same shuffle out.
@@ -74,14 +76,16 @@ export function buildSegments(pool) {
 
 // Sizes a label to fill most of its wedge: start from the arc's angular
 // width (how tall text can be without touching the slice edges), then shrink
-// to fit the available centre-to-rim run if the name is long.
+// to fit the available centre-to-rim run if the name is long. Returns null
+// when even the floor size wouldn't be readable — caller skips the label and
+// leans on the hover tooltip instead.
 function fitLabelFontSize(ctx, label, sweepDeg, radius) {
   const sweepRad = (sweepDeg * Math.PI) / 180;
   const arcWidth = 2 * (radius * 0.72) * Math.sin(sweepRad / 2);
   const innerGap = radius * 0.14;
   const available = radius - 14 - innerGap;
 
-  let size = Math.max(9, Math.min(arcWidth * 0.82, radius * 0.2));
+  let size = Math.max(MIN_READABLE_FONT, Math.min(arcWidth * 0.82, radius * 0.2));
 
   ctx.font = `700 ${size}px 'Segoe UI', sans-serif`;
   const width = ctx.measureText(label).width;
@@ -89,7 +93,7 @@ function fitLabelFontSize(ctx, label, sweepDeg, radius) {
     size *= available / width;
   }
 
-  return Math.max(8, size);
+  return size < MIN_READABLE_FONT ? null : size;
 }
 
 function drawWheel(canvas, segments) {
@@ -100,7 +104,7 @@ function drawWheel(canvas, segments) {
 
   const lineWidth = segments.length > 40 ? 0.5 : 2;
 
-  segments.forEach((seg, i) => {
+  segments.forEach((seg) => {
     const start = ((seg.startAngle - 90) * Math.PI) / 180;
     const end = ((seg.endAngle - 90) * Math.PI) / 180;
 
@@ -115,47 +119,59 @@ function drawWheel(canvas, segments) {
     ctx.stroke();
 
     const sweep = seg.endAngle - seg.startAngle;
-    if (sweep > 6) {
-      const mid = ((seg.startAngle + seg.endAngle) / 2 - 90) * (Math.PI / 180);
-      // Text runs along the slice's own radial line (centre -> rim), flipped
-      // upright on the left half so it never renders upside down.
-      const flip = Math.cos(mid) < 0;
+    const mid = ((seg.startAngle + seg.endAngle) / 2 - 90) * (Math.PI / 180);
+    const label = seg.name.length > 28 ? `${seg.name.slice(0, 26)}…` : seg.name;
+    const fontSize = fitLabelFontSize(ctx, label, sweep, radius);
+    if (fontSize == null) return;
 
-      ctx.save();
-      ctx.beginPath();
-      ctx.moveTo(radius, radius);
-      ctx.arc(radius, radius, radius - 6, start, end);
-      ctx.closePath();
-      ctx.clip();
+    // Text runs along the slice's own radial line (centre -> rim), flipped
+    // upright on the left half so it never renders upside down.
+    const flip = Math.cos(mid) < 0;
 
-      ctx.translate(radius, radius);
-      ctx.rotate(flip ? mid + Math.PI : mid);
-      ctx.fillStyle = seg.textColor;
-      ctx.textBaseline = 'middle';
+    ctx.save();
+    ctx.beginPath();
+    ctx.moveTo(radius, radius);
+    ctx.arc(radius, radius, radius - 6, start, end);
+    ctx.closePath();
+    ctx.clip();
 
-      const innerGap = radius * 0.14;
-      const label = seg.name.length > 28 ? `${seg.name.slice(0, 26)}…` : seg.name;
-      const fontSize = fitLabelFontSize(ctx, label, sweep, radius);
-      ctx.font = `700 ${fontSize}px 'Segoe UI', sans-serif`;
-      if (flip) {
-        ctx.textAlign = 'right';
-        ctx.fillText(label, -innerGap, 0);
-      } else {
-        ctx.textAlign = 'left';
-        ctx.fillText(label, innerGap, 0);
-      }
-      ctx.restore();
+    ctx.translate(radius, radius);
+    ctx.rotate(flip ? mid + Math.PI : mid);
+    ctx.fillStyle = seg.textColor;
+    ctx.textBaseline = 'middle';
+    ctx.font = `700 ${fontSize}px 'Segoe UI', sans-serif`;
+
+    const innerGap = radius * 0.14;
+    if (flip) {
+      ctx.textAlign = 'right';
+      ctx.fillText(label, -innerGap, 0);
+    } else {
+      ctx.textAlign = 'left';
+      ctx.fillText(label, innerGap, 0);
     }
+    ctx.restore();
   });
+}
+
+function normalizeAngle(deg) {
+  return ((deg % 360) + 360) % 360;
 }
 
 export default function Wheel({ pool, spinning, targetAngle, onSpinComplete }) {
   const canvasRef = useRef(null);
+  const wrapperRef = useRef(null);
+  const segmentsRef = useRef([]);
   const [rotation, setRotation] = useState(0);
+  const [hover, setHover] = useState(null);
 
   useEffect(() => {
-    if (!canvasRef.current || pool.length === 0) return;
-    drawWheel(canvasRef.current, buildSegments(pool));
+    if (!canvasRef.current || pool.length === 0) {
+      segmentsRef.current = [];
+      return;
+    }
+    const segments = buildSegments(pool);
+    segmentsRef.current = segments;
+    drawWheel(canvasRef.current, segments);
   }, [pool]);
 
   useEffect(() => {
@@ -163,8 +179,41 @@ export default function Wheel({ pool, spinning, targetAngle, onSpinComplete }) {
     setRotation(targetAngle);
   }, [targetAngle]);
 
+  const handleMouseMove = (e) => {
+    if (spinning || !wrapperRef.current || segmentsRef.current.length === 0) return;
+
+    const rect = wrapperRef.current.getBoundingClientRect();
+    const cx = rect.left + rect.width / 2;
+    const cy = rect.top + rect.height / 2;
+    const dx = e.clientX - cx;
+    const dy = e.clientY - cy;
+    const radiusPx = rect.width / 2;
+    if (Math.hypot(dx, dy) > radiusPx) {
+      setHover(null);
+      return;
+    }
+
+    const screenAngle = normalizeAngle((Math.atan2(dy, dx) * 180) / Math.PI + 90);
+    const wheelAngle = normalizeAngle(screenAngle - rotation);
+    const seg = segmentsRef.current.find((s) => wheelAngle >= s.startAngle && wheelAngle < s.endAngle);
+    if (!seg) {
+      setHover(null);
+      return;
+    }
+
+    const entrant = pool.find((p) => p.id === seg.id);
+    setHover({
+      x: e.clientX,
+      y: e.clientY,
+      name: seg.name,
+      entries: entrant ? entrant.entries : null,
+    });
+  };
+
+  const handleMouseLeave = () => setHover(null);
+
   return (
-    <div className="wheel-wrapper">
+    <div className="wheel-wrapper" ref={wrapperRef}>
       <div className="wheel-pointer" />
       <canvas
         ref={canvasRef}
@@ -176,7 +225,19 @@ export default function Wheel({ pool, spinning, targetAngle, onSpinComplete }) {
           transition: spinning ? 'transform 5.5s cubic-bezier(0.15, 0.8, 0.1, 1)' : 'none',
         }}
         onTransitionEnd={() => spinning && onSpinComplete()}
+        onMouseMove={handleMouseMove}
+        onMouseLeave={handleMouseLeave}
       />
+      {hover && (
+        <div className="wheel-tooltip" style={{ left: hover.x + 18, top: hover.y + 18 }}>
+          <div className="wheel-tooltip-name">{hover.name}</div>
+          {hover.entries != null && (
+            <div className="wheel-tooltip-meta">
+              {hover.entries} ticket{hover.entries === 1 ? '' : 's'} in the wheel
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
