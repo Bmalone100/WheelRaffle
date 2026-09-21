@@ -1,10 +1,20 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import confetti from 'canvas-confetti';
-import { AlertTriangle, Settings, Users, X } from 'lucide-react';
+import { AlertTriangle, Gift, Settings, Users, X } from 'lucide-react';
 import SpinnerList from './components/SpinnerList.jsx';
 import EntrantSidebar from './components/EntrantSidebar.jsx';
+import PrizePicker from './components/PrizePicker.jsx';
 import WinnerHistory from './components/WinnerHistory.jsx';
-import { getState, loadEntrants, resetRaffle, spin } from './api.js';
+import {
+  addPrize,
+  deletePrize,
+  getPrizes,
+  getState,
+  loadEntrants,
+  resetRaffle,
+  setCurrentPrize,
+  spin,
+} from './api.js';
 
 const CONFETTI_COLORS = ['#5C3A7A', '#F5DEB3', '#e63946', '#43aa8b', '#277da1'];
 
@@ -37,6 +47,9 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [optionsOpen, setOptionsOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [prizes, setPrizes] = useState([]);
+  const [currentPrizeId, setCurrentPrizeId] = useState(null);
+  const [prizePickerOpen, setPrizePickerOpen] = useState(false);
   const optionsRef = useRef(null);
 
   useEffect(() => {
@@ -51,11 +64,13 @@ export default function App() {
   }, [optionsOpen]);
 
   useEffect(() => {
-    getState()
-      .then((s) => {
+    Promise.all([getState(), getPrizes()])
+      .then(([s, p]) => {
         setPool(s.pool);
         setDisplayPool(s.pool);
         setHistory(s.history);
+        setCurrentPrizeId(s.currentPrizeId || null);
+        setPrizes(p);
       })
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
@@ -127,7 +142,37 @@ export default function App() {
     }
   }, [spinning]);
 
+  const handleSelectPrize = useCallback(async (prizeId) => {
+    setError('');
+    try {
+      await setCurrentPrize(prizeId);
+      setCurrentPrizeId(prizeId);
+      setPrizePickerOpen(false);
+    } catch (e) {
+      setError(e.message);
+    }
+  }, []);
+
+  const handleAddPrize = useCallback(async (formData) => {
+    const prize = await addPrize(formData);
+    setPrizes((prev) => [...prev, prize]);
+  }, []);
+
+  const handleDeletePrize = useCallback(
+    async (id) => {
+      try {
+        await deletePrize(id);
+        setPrizes((prev) => prev.filter((p) => p.id !== id));
+        if (currentPrizeId === id) setCurrentPrizeId(null);
+      } catch (e) {
+        setError(e.message);
+      }
+    },
+    [currentPrizeId]
+  );
+
   const totalTickets = pool.reduce((sum, e) => sum + e.entries, 0);
+  const currentPrize = prizes.find((p) => p.id === currentPrizeId) || null;
 
   let mainContent;
   if (loading) {
@@ -149,16 +194,6 @@ export default function App() {
         onSpinComplete={handleSpinComplete}
       />
     );
-  }
-
-  let winnerMessage = null;
-  if (lastWinner) {
-    if (lastWinner.entriesRemaining > 0) {
-      const ticketWord = lastWinner.entriesRemaining === 1 ? 'ticket' : 'tickets';
-      winnerMessage = `${lastWinner.entriesRemaining} ${ticketWord} still in the draw.`;
-    } else {
-      winnerMessage = 'That was their last ticket — removed from the draw.';
-    }
   }
 
   return (
@@ -226,15 +261,51 @@ export default function App() {
 
       {lastWinner && !spinning && (
         <div className="winner-banner">
-          🎉 <strong>{lastWinner.name}</strong> wins! {winnerMessage}
+          🎉 <strong>{lastWinner.name}</strong> wins
+          {lastWinner.prizeName ? (
+            <>
+              {' '}
+              <strong>{lastWinner.prizeName}</strong>
+            </>
+          ) : (
+            ''
+          )}
+          !
         </div>
       )}
+
+      <button type="button" className="prize-badge" onClick={() => setPrizePickerOpen(true)}>
+        {currentPrize ? (
+          <>
+            <img src={currentPrize.imageUrl} alt="" className="prize-badge-icon" />
+            <span className="prize-badge-text">
+              <span className="prize-badge-label">Drawing for</span>
+              <span className="prize-badge-name">{currentPrize.name}</span>
+            </span>
+          </>
+        ) : (
+          <>
+            <Gift size={20} />
+            <span className="prize-badge-placeholder">Select a prize to draw for</span>
+          </>
+        )}
+      </button>
 
       <div className="controls">
         <button className="btn btn-primary" onClick={handleSpin} disabled={spinning || pool.length === 0}>
           {spinning ? 'Spinning…' : 'Spin'}
         </button>
       </div>
+
+      <PrizePicker
+        prizes={prizes}
+        currentPrizeId={currentPrizeId}
+        open={prizePickerOpen}
+        onClose={() => setPrizePickerOpen(false)}
+        onSelect={handleSelectPrize}
+        onAdd={handleAddPrize}
+        onDelete={handleDeletePrize}
+      />
 
       <WinnerHistory history={history} />
     </div>

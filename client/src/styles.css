@@ -405,3 +405,228 @@ body {
 .sidebar-empty {
   color: #7c6c88;
 }
+
+.history-prize {
+  font-weight: 400;
+  color: var(--heather);
+}
+
+.prize-badge {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  max-width: 520px;
+  background: var(--card-bg);
+  border: 1.5px solid var(--wheat-dark);
+  border-radius: 16px;
+  padding: 10px 18px;
+  cursor: pointer;
+  text-align: left;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.prize-badge:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(61, 37, 85, 0.12);
+}
+
+.prize-badge-icon {
+  width: 56px;
+  height: 56px;
+  border-radius: 12px;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+
+.prize-badge-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.prize-badge-label {
+  font-size: 0.78rem;
+  color: #7c6c88;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.prize-badge-name {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--heather-dark);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.prize-badge-placeholder {
+  color: #7c6c88;
+  font-weight: 600;
+}
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(42, 31, 51, 0.45);
+  z-index: 50;
+}
+
+.modal-panel {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 520px;
+  max-width: 92vw;
+  max-height: 85vh;
+  overflow-y: auto;
+  background: var(--card-bg);
+  border-radius: 20px;
+  padding: 22px;
+  box-shadow: 0 20px 48px rgba(42, 31, 51, 0.4);
+  z-index: 51;
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+
+.modal-header h2 {
+  margin: 0;
+  color: var(--heather-dark);
+  font-size: 1.3rem;
+}
+
+.prize-picker-empty {
+  color: #7c6c88;
+}
+
+.prize-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+  gap: 14px;
+  margin-bottom: 20px;
+}
+
+.prize-card {
+  position: relative;
+}
+
+.prize-card-select {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  background: transparent;
+  border: 2px solid transparent;
+  border-radius: 14px;
+  padding: 8px;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.prize-card-select:hover {
+  background: var(--wheat-light);
+}
+
+.prize-card.selected .prize-card-select {
+  border-color: var(--heather);
+  background: var(--wheat-light);
+}
+
+.prize-icon {
+  width: 84px;
+  height: 84px;
+  border-radius: 12px;
+  object-fit: cover;
+  box-shadow: 0 4px 10px rgba(61, 37, 85, 0.2);
+}
+
+.prize-icon-none {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--wheat-light);
+  color: #7c6c88;
+  font-size: 1.4rem;
+  box-shadow: none;
+  border: 1.5px dashed var(--wheat-dark);
+}
+
+.prize-card-name {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--ink);
+  text-align: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+
+.prize-card-delete {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: none;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.9);
+  color: var(--error);
+  cursor: pointer;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+}
+
+.prize-card-delete:hover {
+  background: #fbeae8;
+}
+
+.prize-add-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  border-top: 1px solid var(--wheat-light);
+  padding-top: 16px;
+}
+
+.prize-add-form h3 {
+  margin: 0;
+  color: var(--heather-dark);
+  font-size: 1rem;
+}
+
+.prize-name-input {
+  border: 1px solid var(--wheat-dark);
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 0.95rem;
+  font-family: inherit;
+}
+
+.prize-file-input {
+  font-size: 0.9rem;
+}
+
+.prize-add-error {
+  color: var(--error);
+  font-size: 0.85rem;
+  margin: 0;
+}
+
+.prize-add-form .btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  align-self: flex-start;
+}
