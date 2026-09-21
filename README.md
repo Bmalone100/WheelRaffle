@@ -12,10 +12,21 @@ Runs entirely on your machine — no cloud dependency.
   `server/data/state.json` (gitignored) so state survives closing the app.
 - Each spin removes **one ticket** from the winner. If they had more entries, they
   stay in the wheel with one fewer; once they hit zero, they drop out entirely.
-- **Reset Raffle** re-reads `entrants.config.json` from disk and clears history — use
-  this after editing the config file, or to start a fresh raffle.
-- The wheel's slice sizes are proportional to each entrant's remaining ticket count,
-  so someone with 3 entries has 3x the chance (and 3x the arc) of someone with 1.
+- **Reset Raffle** re-reads `entrants.config.json` from disk and clears the in-app
+  winner history — use this after editing the config file, or to start a fresh round.
+  It does **not** touch the spin log (see below).
+- The wheel is split into one slice per remaining *ticket*, shuffled around the
+  circle (not grouped by person), so someone with 3 entries gets 3 scattered slices
+  rather than one bigger wedge — with lots of entrants this reads as a proper
+  many-slice raffle wheel instead of a handful of fat pie slices.
+
+## Spin log
+
+Every spin appends a row to `server/data/spins.csv` (gitignored): `datetime,name,email`.
+Unlike the in-app Winner History panel, this log is never cleared by Reset Raffle —
+it's a running audit trail across the whole life of the app. Grab it anytime via the
+**Download spin log (CSV)** link in the app, or `GET /api/log`, or just open the file
+directly in `server/data/`.
 
 ## Running it
 
@@ -59,11 +70,14 @@ share a name.
 
 ## Theme
 
-Colours are eir's brand names, **Heather** (purple) and **Wheat** (cream/gold), as CSS
-variables in [`client/src/styles.css`](client/src/styles.css). I didn't have eir's
-exact official hex values on hand, so the current values (`--heather: #5c3a7a`,
-`--wheat: #f5deb3`, plus light/dark variants) are close approximations — swap them
-for the real brand hex codes if you have eir's brand guide handy.
+The wheel's slices are coloured in a ROYGBIV rainbow sweep (red at the pointer round
+to violet), computed in [`client/src/components/Wheel.jsx`](client/src/components/Wheel.jsx).
+Everything else — buttons, banners, the wheel's outer ring — uses eir's brand names,
+**Heather** (purple) and **Wheat** (cream/gold), as CSS variables in
+[`client/src/styles.css`](client/src/styles.css). I didn't have eir's exact official
+hex values on hand, so the current values (`--heather: #5c3a7a`, `--wheat: #f5deb3`,
+plus light/dark variants) are close approximations — swap them for the real brand hex
+codes if you have eir's brand guide handy.
 
 ## Project structure
 
