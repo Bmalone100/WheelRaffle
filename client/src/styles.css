@@ -102,7 +102,18 @@ body {
 
 .controls {
   display: flex;
-  gap: 16px;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.spin-blocked-hint {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  color: var(--error);
+  font-size: 0.85rem;
 }
 
 .icon-button {
@@ -171,7 +182,7 @@ body {
   flex-direction: column;
   gap: 8px;
   align-items: stretch;
-  min-width: 260px;
+  min-width: 300px;
 }
 
 .btn {
@@ -214,16 +225,14 @@ body {
   background: #fbeae8;
 }
 
-.log-link {
-  color: var(--heather);
-  font-size: 0.9rem;
-  text-decoration: underline;
-  text-align: center;
-  margin-top: 4px;
+.btn-ghost {
+  background: transparent;
+  color: var(--heather-dark);
+  border: 1.5px solid var(--wheat-dark);
 }
 
-.log-link:hover {
-  color: var(--heather-dark);
+.btn-ghost:not(:disabled):hover {
+  background: var(--wheat-light);
 }
 
 .options-panel-header {
@@ -258,6 +267,54 @@ body {
   margin-top: 1px;
 }
 
+.options-log-section {
+  border-top: 1px solid var(--wheat-light);
+  padding-top: 10px;
+  margin-top: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.options-log-section h3 {
+  margin: 0;
+  color: var(--heather-dark);
+  font-size: 0.95rem;
+}
+
+.options-current-log {
+  margin: -2px 0 2px;
+  font-size: 0.78rem;
+  color: var(--heather);
+  white-space: normal;
+  word-break: break-all;
+}
+
+.options-field-label {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--heather-dark);
+}
+
+.options-log-folder-row {
+  display: flex;
+  gap: 6px;
+}
+
+.options-log-folder-row .modal-text-input {
+  flex: 1;
+  min-width: 0;
+  font-size: 0.85rem;
+}
+
+.options-export-message {
+  margin: 0;
+  font-size: 0.78rem;
+  color: var(--heather-dark);
+  white-space: normal;
+  word-break: break-all;
+}
+
 .winner-banner {
   background: var(--wheat-light);
   border: 2px solid var(--heather);
@@ -277,13 +334,6 @@ body {
   text-transform: uppercase;
   letter-spacing: 0.04em;
   margin-bottom: 4px;
-}
-
-.spin-hint {
-  margin: -12px 0 0;
-  color: var(--error);
-  font-size: 0.85rem;
-  text-align: center;
 }
 
 .banner {
@@ -457,12 +507,6 @@ body {
   color: var(--heather);
 }
 
-.sidebar-count {
-  color: var(--heather);
-  font-size: 0.9rem;
-  white-space: nowrap;
-}
-
 .sidebar-email-reveal {
   margin-top: 4px;
   font-size: 0.85rem;
@@ -471,6 +515,43 @@ body {
   border-radius: 8px;
   padding: 6px 10px;
   display: inline-block;
+}
+
+.sidebar-reveal-entries {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.sidebar-edit-button {
+  color: var(--heather-dark);
+  opacity: 0.7;
+}
+
+.sidebar-edit-button:hover {
+  opacity: 1;
+}
+
+.sidebar-edit-entries {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.sidebar-edit-input {
+  width: 56px;
+  font-size: 0.85rem;
+  padding: 2px 6px;
+  border: 1px solid var(--wheat-dark);
+  border-radius: 6px;
+  background: var(--card-bg);
+  color: var(--ink);
+}
+
+.sidebar-edit-error {
+  margin-top: 4px;
+  color: #b3261e;
+  font-size: 0.8rem;
 }
 
 .sidebar-empty {
@@ -555,7 +636,7 @@ body {
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
-  width: 520px;
+  width: 560px;
   max-width: 92vw;
   max-height: 85vh;
   overflow-y: auto;
@@ -564,6 +645,33 @@ body {
   padding: 22px;
   box-shadow: 0 20px 48px rgba(42, 31, 51, 0.4);
   z-index: 51;
+}
+
+/* The Add/Edit prize dialog floats above the Prizes modal rather than
+   living inline at the bottom of it — a focused single-purpose step instead
+   of a long scroll that reflows every time you toggle between browsing
+   prizes and editing one. */
+.modal-overlay-nested {
+  background: rgba(42, 31, 51, 0.55);
+  z-index: 60;
+}
+
+.modal-panel-nested {
+  width: 380px;
+  max-height: 90vh;
+  z-index: 61;
+  animation: modal-pop-in 0.15s ease;
+}
+
+@keyframes modal-pop-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -47%);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, -50%);
+  }
 }
 
 .modal-header {
@@ -579,13 +687,9 @@ body {
   font-size: 1.3rem;
 }
 
-.prize-picker-empty {
-  color: #7c6c88;
-}
-
 .prize-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
   gap: 14px;
   margin-bottom: 20px;
 }
@@ -664,38 +768,10 @@ body {
   max-width: 100%;
 }
 
-.prize-card-delete,
-.prize-card-queue-add {
-  position: absolute;
-  top: 2px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 24px;
-  height: 24px;
-  border: none;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.9);
-  cursor: pointer;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
-}
-
-.prize-card-delete {
-  right: 2px;
-  color: var(--error);
-}
-
-.prize-card-delete:hover {
-  background: #fbeae8;
-}
-
-.prize-card-queue-add {
-  left: 2px;
+.prize-card-value {
+  font-size: 0.72rem;
   color: var(--heather);
-}
-
-.prize-card-queue-add:hover {
-  background: var(--wheat-light);
+  margin-top: -4px;
 }
 
 .prize-card-queued-badge {
@@ -707,29 +783,80 @@ body {
   padding: 1px 8px;
 }
 
-.prize-card-mystery-toggle {
-  position: absolute;
-  bottom: 2px;
-  left: 2px;
+/* One consistent row of same-sized action icons under each card, instead of
+   four separately-positioned floating buttons fighting for corner space. */
+.prize-card-actions {
+  display: flex;
+  justify-content: center;
+  gap: 4px;
+  margin-top: 6px;
+}
+
+.prize-action-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 22px;
-  height: 22px;
+  width: 24px;
+  height: 24px;
   border: none;
   border-radius: 50%;
+  background: var(--wheat-light);
+  color: var(--heather-dark);
   cursor: pointer;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+  transition: background 0.15s ease, color 0.15s ease;
 }
 
-.prize-card-mystery-toggle.eligible {
+.prize-action-btn:hover {
+  background: var(--wheat);
+}
+
+.prize-action-btn-muted {
+  color: #9c8fa8;
+}
+
+.prize-action-btn-danger {
+  color: var(--error);
+}
+
+.prize-action-btn-danger:hover {
+  background: #fbeae8;
+}
+
+.prize-card-add {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 158px;
+  border: 1.5px dashed var(--wheat-dark);
+  border-radius: 14px;
+  background: transparent;
+  color: var(--heather-dark);
+  font-family: inherit;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.prize-card-add:hover {
+  border-color: var(--heather);
+  background: var(--wheat-light);
+}
+
+.prize-card-add-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
   background: var(--wheat-light);
   color: var(--heather);
 }
 
-.prize-card-mystery-toggle.excluded {
-  background: rgba(255, 255, 255, 0.9);
-  color: #9c8fa8;
+.prize-card-add-label {
+  font-size: 0.85rem;
+  font-weight: 600;
 }
 
 .prize-queue-section {
@@ -833,6 +960,26 @@ body {
   padding-top: 16px;
 }
 
+/* Standalone inside the small Add/Edit dialog, right under its own header —
+   no divider needed against content that isn't there. */
+.modal-form-nested {
+  border-top: none;
+  padding-top: 0;
+}
+
+.modal-field-row {
+  display: flex;
+  gap: 16px;
+}
+
+.modal-field-row .modal-field-label {
+  flex: 1;
+}
+
+.modal-field-row .modal-number-input {
+  width: 100%;
+}
+
 .modal-form h3 {
   margin: 0;
   color: var(--heather-dark);
@@ -928,6 +1075,21 @@ body {
   color: var(--error);
   font-size: 0.85rem;
   margin: 0;
+}
+
+.modal-field-hint {
+  color: #7c6c88;
+  font-size: 0.8rem;
+  margin: -4px 0 0;
+}
+
+.modal-form-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.modal-form-actions .btn {
+  flex: 1;
 }
 
 .modal-form-summary {

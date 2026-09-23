@@ -1,5 +1,6 @@
 import express from 'express';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
@@ -10,11 +11,21 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
 const CONFIG_PATH = path.join(ROOT, 'entrants.config.json');
 const STATE_PATH = path.join(__dirname, 'data', 'state.json');
-const LOG_PATH = path.join(__dirname, 'data', 'spins.csv');
+const SETTINGS_PATH = path.join(__dirname, 'data', 'settings.json');
+const LOG_DIR = path.join(__dirname, 'data', 'logs');
 const PRIZES_META_PATH = path.join(__dirname, 'data', 'prizes.json');
 const PRIZE_IMAGES_DIR = path.join(__dirname, 'data', 'prize-images');
 const PRIZE_ICON_SIZE = 320;
 const PORT = process.env.PORT || 4000;
+
+// Same id derivation used everywhere an entrant needs a stable key: their
+// lowercased email, or a name+index fallback for a hand-edited config entry
+// with no email — kept as one function so lookups (e.g. the entries-edit
+// endpoint below) agree with how loadEntrantsConfig assigned ids in the
+// first place.
+function entrantId(e, i) {
+  return (e.email && e.email.trim().toLowerCase()) || `${e.name}-${i}`;
+}
 
 function loadEntrantsConfig() {
   const raw = fs.readFileSync(CONFIG_PATH, 'utf-8');
@@ -24,7 +35,7 @@ function loadEntrantsConfig() {
   }
   return entrants
     .map((e, i) => ({
-      id: (e.email && e.email.trim().toLowerCase()) || `${e.name}-${i}`,
+      id: entrantId(e, i),
       name: e.name,
       email: e.email || '',
       entries: Number(e.entries) || 0,
@@ -108,17 +119,74 @@ function csvField(value) {
   return /[",\n]/.test(str) ? `"${str.replace(/"/g, '""')}"` : str;
 }
 
-// Append-only audit trail of every spin, independent of state.json/history —
-// Load Entrants/Reset clear the current round but never touch this log.
-function appendSpinLog(entry) {
-  fs.mkdirSync(path.dirname(LOG_PATH), { recursive: true });
-  if (!fs.existsSync(LOG_PATH)) {
-    fs.writeFileSync(LOG_PATH, 'datetime,name,email,prize\n');
+// Log filenames use this convention (not the literal hh:mm:ss the feature
+// was requested with — Windows filenames can't contain `:`, so seconds are
+// hyphen-separated instead): Raffle_ddMMMyy_HH-mm-ss.csv
+const LOG_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+function formatLogTimestamp(date) {
+  const dd = String(date.getDate()).padStart(2, '0');
+  const mmm = LOG_MONTHS[date.getMonth()];
+  const yy = String(date.getFullYear()).slice(-2);
+  const hh = String(date.getHours()).padStart(2, '0');
+  const mi = String(date.getMinutes()).padStart(2, '0');
+  const ss = String(date.getSeconds()).padStart(2, '0');
+  return `${dd}${mmm}${yy}_${hh}-${mi}-${ss}`;
+}
+function newLogFileName() {
+  return `Raffle_${formatLogTimestamp(new Date())}.csv`;
+}
+
+const AUDIT_LOG_HEADER = 'datetime,action,name,email,prize,details\n';
+
+// Creates `filename` under LOG_DIR with a header row if it doesn't exist yet
+// (a rotated-to filename never does; re-running this for the current file on
+// every append is just a cheap existence check). Returns the full path.
+function ensureLogFile(filename) {
+  fs.mkdirSync(LOG_DIR, { recursive: true });
+  const filePath = path.join(LOG_DIR, filename);
+  if (!fs.existsSync(filePath)) {
+    fs.writeFileSync(filePath, AUDIT_LOG_HEADER);
   }
+  return filePath;
+}
+
+// Append-only audit trail of every mutating action (spins, entrant/prize
+// add-edit-delete, queue and selection changes, Load Entrants, Reset) —
+// independent of state.json/history, which Reset clears. Only Reset rotates
+// to a new dated file (see /api/reset); everything else appends to whichever
+// file state.currentLogFile currently names.
+function appendAudit(action, { name = '', email = '', prize = '', details = '' } = {}) {
+  const filePath = ensureLogFile(state.currentLogFile);
   fs.appendFileSync(
-    LOG_PATH,
-    `${csvField(entry.wonAt)},${csvField(entry.name)},${csvField(entry.email)},${csvField(entry.prizeName)}\n`
+    filePath,
+    `${csvField(new Date().toISOString())},${csvField(action)},${csvField(name)},${csvField(email)},${csvField(prize)},${csvField(details)}\n`
   );
+}
+
+// The Export Log button copies the current log to this folder (see
+// /api/log/export) — defaults to the desktop so it's somewhere the organizer
+// will actually notice it, falling back to the home directory on a machine
+// with no Desktop folder.
+function defaultLogFolder() {
+  const desktop = path.join(os.homedir(), 'Desktop');
+  return fs.existsSync(desktop) ? desktop : os.homedir();
+}
+
+function loadSettings() {
+  if (fs.existsSync(SETTINGS_PATH)) {
+    try {
+      const loaded = JSON.parse(fs.readFileSync(SETTINGS_PATH, 'utf-8'));
+      if (loaded.logFolder) return loaded;
+    } catch {
+      // corrupt settings file, fall through to defaults
+    }
+  }
+  return { logFolder: defaultLogFolder() };
+}
+
+function saveSettings(next) {
+  fs.mkdirSync(path.dirname(SETTINGS_PATH), { recursive: true });
+  fs.writeFileSync(SETTINGS_PATH, JSON.stringify(next, null, 2));
 }
 
 function loadPrizes() {
@@ -129,10 +197,12 @@ function loadPrizes() {
   } catch {
     return [];
   }
-  // Prizes saved before the mystery-eligibility flag existed default to
-  // eligible, so nothing already in play silently drops out of the pool.
+  // Prizes saved before the mystery-eligibility flag (or the value field)
+  // existed default to eligible / worthless, so nothing already in play
+  // silently drops out of the pool or crashes a fanfare-tier lookup.
   loaded.forEach((p) => {
     if (typeof p.mysteryEligible !== 'boolean') p.mysteryEligible = true;
+    if (typeof p.value !== 'number' || Number.isNaN(p.value)) p.value = 0;
   });
   return loaded;
 }
@@ -145,8 +215,14 @@ function savePrizes(prizes) {
 let state = loadState();
 if (!Array.isArray(state.prizeQueue)) state.prizeQueue = [];
 delete state.mysteryPrize; // superseded: Mystery is now the implicit fallback, not a stored flag
+// The very first run ever (no currentLogFile yet) gets a freshly-dated log
+// file same as any later rotation — there's no fixed-name starting log.
+if (!state.currentLogFile) state.currentLogFile = newLogFileName();
+ensureLogFile(state.currentLogFile);
 saveState(state);
 let prizes = loadPrizes();
+let settings = loadSettings();
+saveSettings(settings);
 
 // Drops any queue entries pointing at prizes that no longer exist or are
 // out of stock, so the front of the queue (if any) is always safe to use
@@ -313,6 +389,7 @@ app.post('/api/entrants', (req, res) => {
   const newEntrant = { id: email, name, email, entries };
   state.pool = [...state.pool, newEntrant];
   saveState(state);
+  appendAudit('add_entrant', { name, email, details: `entries: ${entries}` });
   res.json({ pool: state.pool, added: newEntrant });
 });
 
@@ -365,8 +442,42 @@ app.post('/api/entrants/import', (req, res) => {
     state.pool = [...state.pool, ...added];
     saveState(state);
   }
+  appendAudit('import_entrants', { details: `added ${added.length}, skipped ${skipped.length}` });
 
   res.json({ pool: state.pool, addedCount: added.length, skipped });
+});
+
+// Edits one entrant's ticket count from the GUI (the pencil icon in the
+// entrants sidebar) instead of hand-editing entrants.config.json. Persists
+// to the config file, same as Add Entrants, so it survives a Reset — and
+// also sets the count directly on the live pool so it takes effect this
+// round without needing a Load Entrants.
+app.patch('/api/entrants/:id', (req, res) => {
+  const { id } = req.params;
+  const entries = Number.parseInt(req.body.entries, 10);
+  if (!Number.isInteger(entries) || entries < 1) {
+    return res.status(400).json({ error: 'Entries must be a whole number of at least 1.' });
+  }
+
+  let rawEntrants;
+  try {
+    rawEntrants = readEntrantsConfigRaw();
+  } catch (e) {
+    return res.status(400).json({ error: e.message });
+  }
+
+  const idx = rawEntrants.findIndex((e, i) => entrantId(e, i) === id);
+  if (idx === -1) return res.status(404).json({ error: 'Entrant not found.' });
+
+  const before = rawEntrants[idx];
+  rawEntrants[idx] = { ...before, entries };
+  writeEntrantsConfigRaw(rawEntrants);
+
+  state.pool = state.pool.map((e) => (e.id === id ? { ...e, entries } : e));
+  saveState(state);
+  appendAudit('edit_entrant', { name: before.name, email: id, details: `entries: ${before.entries} -> ${entries}` });
+
+  res.json({ pool: state.pool });
 });
 
 // Only prizes still in stock are selectable — same pattern as the entrant
@@ -377,17 +488,33 @@ app.get('/api/prizes', (req, res) => {
   res.json(prizes.filter((p) => p.quantity > 0));
 });
 
+// Shared by create (Add Prize) and edit (PATCH): the only difference between
+// the two is whether quantity may be 0 — an edit can zero out existing stock
+// the same way a spin does, but you can't *create* a prize with none to give
+// away.
+function parsePrizeInput(body, minQuantity) {
+  const name = (body.name || '').trim();
+  const quantity = Number.parseInt(body.quantity, 10);
+  const value = body.value === undefined || body.value === '' ? 0 : Number(body.value);
+
+  if (!name) return { error: 'Prize name is required.' };
+  if (!Number.isInteger(quantity) || quantity < minQuantity) {
+    return { error: `Quantity must be a whole number of ${minQuantity} or more.` };
+  }
+  if (!Number.isFinite(value) || value < 0) {
+    return { error: 'Cost must be a number of 0 or more.' };
+  }
+  return { name, quantity, value };
+}
+
 // Normalizes any uploaded image (PNG/JPEG/etc, any source aspect ratio) into
 // a consistent square icon: auto-rotated per EXIF, centre-cropped to fill a
 // PRIZE_ICON_SIZE square, saved as PNG so every prize card looks uniform
 // regardless of what was uploaded.
 app.post('/api/prizes', upload.single('image'), async (req, res) => {
-  const name = (req.body.name || '').trim();
-  const quantity = Number.parseInt(req.body.quantity, 10);
-  if (!name) return res.status(400).json({ error: 'Prize name is required.' });
-  if (!Number.isInteger(quantity) || quantity < 1) {
-    return res.status(400).json({ error: 'Quantity must be a whole number of at least 1.' });
-  }
+  const parsed = parsePrizeInput(req.body, 1);
+  if (parsed.error) return res.status(400).json({ error: parsed.error });
+  const { name, quantity, value } = parsed;
   if (!req.file) return res.status(400).json({ error: 'An image file is required.' });
 
   const id = crypto.randomUUID();
@@ -407,12 +534,47 @@ app.post('/api/prizes', upload.single('image'), async (req, res) => {
     name,
     imageUrl: `/api/prizes/images/${id}.png`,
     quantity,
+    value,
     mysteryEligible: true,
     createdAt: new Date().toISOString(),
   };
   prizes = [...prizes, prize];
   savePrizes(prizes);
+  appendAudit('add_prize', { prize: name, details: `quantity: ${quantity}, cost: ${value}` });
   res.json(prize);
+});
+
+// Edits a prize's name, remaining quantity and/or value from the GUI (the
+// pencil icon on a prize card) instead of only being settable at creation.
+// Quantity here may drop to 0 (unlike Add Prize's minimum of 1) — same
+// "out of stock" state a prize reaches naturally by being won out, so it
+// simply drops out of the picker/queue/Mystery pool without needing a
+// delete. Value drives which fanfare tier plays when this prize is won, so
+// it's editable independently of a re-upload.
+app.patch('/api/prizes/:id', (req, res) => {
+  const prize = prizes.find((p) => p.id === req.params.id);
+  if (!prize) return res.status(404).json({ error: 'Prize not found.' });
+
+  const parsed = parsePrizeInput(req.body, 0);
+  if (parsed.error) return res.status(400).json({ error: parsed.error });
+  const { name, quantity, value } = parsed;
+
+  const before = { name: prize.name, quantity: prize.quantity, value: prize.value };
+  prize.name = name;
+  prize.quantity = quantity;
+  prize.value = value;
+  savePrizes(prizes);
+  // Same as a spin claiming the last unit: an edit that zeroes out the
+  // currently-selected prize falls back to Mystery rather than leaving a
+  // dead selection armed.
+  if (quantity <= 0 && state.currentPrizeId === prize.id) state.currentPrizeId = null;
+  pruneQueue();
+  saveState(state);
+  appendAudit('edit_prize', {
+    prize: name,
+    details: `name: ${before.name} -> ${name}, quantity: ${before.quantity} -> ${quantity}, cost: ${before.value} -> ${value}`,
+  });
+  res.json({ prize, currentPrizeId: state.currentPrizeId, prizeQueue: state.prizeQueue });
 });
 
 // Toggles whether a prize can turn up in a random Mystery draw (the
@@ -424,17 +586,25 @@ app.patch('/api/prizes/:id/mystery-eligible', (req, res) => {
   if (!prize) return res.status(404).json({ error: 'Prize not found.' });
   prize.mysteryEligible = Boolean(req.body.mysteryEligible);
   savePrizes(prizes);
+  appendAudit('mystery_eligible', { prize: prize.name, details: `eligible: ${prize.mysteryEligible}` });
   res.json(prize);
 });
 
 app.delete('/api/prizes/:id', (req, res) => {
   const { id } = req.params;
+  // Only remove an image file for an id that actually matched a known
+  // prize — those ids are always our own crypto.randomUUID() values.
+  // Passing the raw URL param straight into a filesystem path unconditioned
+  // on that check would let a `..`-laden id delete a file outside
+  // PRIZE_IMAGES_DIR.
+  const existingPrize = prizes.find((p) => p.id === id);
   prizes = prizes.filter((p) => p.id !== id);
   savePrizes(prizes);
-  fs.rm(path.join(PRIZE_IMAGES_DIR, `${id}.png`), { force: true }, () => {});
+  if (existingPrize) fs.rm(path.join(PRIZE_IMAGES_DIR, `${id}.png`), { force: true }, () => {});
   if (state.currentPrizeId === id) state.currentPrizeId = null;
   pruneQueue();
   saveState(state);
+  if (existingPrize) appendAudit('delete_prize', { prize: existingPrize.name });
   res.json({ ok: true, prizeQueue: state.prizeQueue });
 });
 
@@ -450,6 +620,8 @@ app.post('/api/current-prize', (req, res) => {
   state.currentPrizeId = prizeId || null;
   state.prizeQueue = [];
   saveState(state);
+  const selectedName = prizeId ? prizes.find((p) => p.id === prizeId)?.name : 'Mystery Prize';
+  appendAudit('select_prize', { prize: selectedName });
   res.json({ currentPrizeId: state.currentPrizeId, prizeQueue: state.prizeQueue });
 });
 
@@ -467,6 +639,8 @@ app.post('/api/prize-queue', (req, res) => {
   state.prizeQueue = queue;
   state.currentPrizeId = null;
   saveState(state);
+  const queueNames = queue.map((id) => (id === null ? 'Mystery' : prizes.find((p) => p.id === id)?.name || '?'));
+  appendAudit('set_queue', { details: queue.length ? queueNames.join(' > ') : 'cleared' });
   res.json({ prizeQueue: state.prizeQueue, currentPrizeId: state.currentPrizeId });
 });
 
@@ -476,6 +650,14 @@ app.post('/api/spin', (req, res) => {
 
   if (pool.length === 0 || totalWeight <= 0) {
     return res.status(400).json({ error: 'No entrants left in the wheel.' });
+  }
+  // Checked before touching a winner or a ticket: a spin that couldn't
+  // possibly award anything (empty catalogue, or every prize already won
+  // out) is refused outright rather than quietly declaring "no prize" —
+  // nobody should lose their one shot at a prize to a misclick made before
+  // the catalogue was set up.
+  if (!prizes.some((p) => p.quantity > 0)) {
+    return res.status(400).json({ error: 'No prizes available — add one in the Prize Picker before spinning.' });
   }
 
   const poolBefore = pool.map((e) => ({ ...e }));
@@ -495,13 +677,19 @@ app.post('/api/spin', (req, res) => {
     prizeId: currentPrize ? currentPrize.id : null,
     prizeName: currentPrize ? currentPrize.name : null,
     prizeImageUrl: currentPrize ? currentPrize.imageUrl : null,
+    prizeValue: currentPrize ? currentPrize.value : null,
     wasMysteryPrize: prizeSource === 'mystery',
   };
   state.history = [historyEntry, ...state.history];
   state.pool = pool.filter((e) => e.entries > 0);
 
   saveState(state);
-  appendSpinLog(historyEntry);
+  appendAudit('spin', {
+    name: winner.name,
+    email: winner.email,
+    prize: historyEntry.prizeName || '',
+    details: historyEntry.wasMysteryPrize ? 'mystery' : '',
+  });
 
   res.json({
     winner: {
@@ -511,6 +699,7 @@ app.post('/api/spin', (req, res) => {
       entriesRemaining,
       prizeName: historyEntry.prizeName,
       prizeImageUrl: historyEntry.prizeImageUrl,
+      prizeValue: historyEntry.prizeValue,
       wasMysteryPrize: historyEntry.wasMysteryPrize,
     },
     poolBefore,
@@ -522,15 +711,82 @@ app.post('/api/spin', (req, res) => {
   });
 });
 
+// Raw view/fetch of the current audit log — mainly for debugging; the
+// organizer-facing way to get a copy is the Export Log button (/api/log/export)
+// below, since a browser download always lands in the browser's own
+// downloads folder regardless of where the organizer actually wants it.
 app.get('/api/log', (req, res) => {
-  const content = fs.existsSync(LOG_PATH) ? fs.readFileSync(LOG_PATH, 'utf-8') : 'datetime,name,email,prize\n';
+  const filePath = ensureLogFile(state.currentLogFile);
+  const content = fs.readFileSync(filePath, 'utf-8');
   res.setHeader('Content-Type', 'text/csv');
-  res.setHeader('Content-Disposition', 'attachment; filename="wheelraffle-spins.csv"');
+  res.setHeader('Content-Disposition', `attachment; filename="${state.currentLogFile}"`);
   res.send(content);
+});
+
+app.get('/api/settings', (req, res) => {
+  res.json({ logFolder: settings.logFolder, currentLogFile: state.currentLogFile });
+});
+
+// Validates a folder path is actually creatable/writable before accepting it
+// — saving should mean "this works," not just "this string is non-empty,"
+// otherwise a bad path only surfaces later as a confusing failure on Export.
+function assertUsableFolder(folder) {
+  try {
+    fs.mkdirSync(folder, { recursive: true });
+    return null;
+  } catch (e) {
+    return `Could not create/access "${folder}": ${e.message}`;
+  }
+}
+
+app.post('/api/settings', (req, res) => {
+  const logFolder = (req.body.logFolder || '').trim();
+  if (!logFolder) return res.status(400).json({ error: 'Log folder is required.' });
+  const folderError = assertUsableFolder(logFolder);
+  if (folderError) return res.status(400).json({ error: folderError });
+
+  const before = settings.logFolder;
+  settings = { ...settings, logFolder };
+  saveSettings(settings);
+  appendAudit('update_settings', { details: `log folder: ${before} -> ${logFolder}` });
+  res.json({ logFolder: settings.logFolder });
+});
+
+// Copies the current log file to the configured folder on this machine.
+// This app runs entirely locally (see README), so "download" here means a
+// direct filesystem copy to wherever the organizer wants it, rather than a
+// browser download prompt that always lands in the browser's own downloads
+// folder regardless of preference. Accepts an optional `logFolder` so the
+// button always acts on whatever's currently typed in the field — without
+// this, exporting right after editing the folder (without a separate Save
+// first) would silently use the previous, already-saved value instead.
+app.post('/api/log/export', (req, res) => {
+  const requestedFolder = (req.body.logFolder || '').trim();
+  const targetFolder = requestedFolder || settings.logFolder;
+
+  const folderError = assertUsableFolder(targetFolder);
+  if (folderError) return res.status(400).json({ error: folderError });
+
+  if (requestedFolder && requestedFolder !== settings.logFolder) {
+    const before = settings.logFolder;
+    settings = { ...settings, logFolder: requestedFolder };
+    saveSettings(settings);
+    appendAudit('update_settings', { details: `log folder: ${before} -> ${requestedFolder}` });
+  }
+
+  const sourcePath = ensureLogFile(state.currentLogFile);
+  const destPath = path.join(targetFolder, state.currentLogFile);
+  try {
+    fs.copyFileSync(sourcePath, destPath);
+  } catch (e) {
+    return res.status(400).json({ error: `Could not write log file: ${e.message}` });
+  }
+  res.json({ path: destPath });
 });
 
 // Reloads entrants.config.json into the pool but keeps the existing winner
 // history — for adding/editing entrants mid-event without losing the round.
+// Same log file as before; only Reset rotates to a new one (see below).
 app.post('/api/load-entrants', (req, res) => {
   try {
     state = {
@@ -538,24 +794,34 @@ app.post('/api/load-entrants', (req, res) => {
       history: state.history,
       currentPrizeId: state.currentPrizeId,
       prizeQueue: state.prizeQueue,
+      currentLogFile: state.currentLogFile,
     };
   } catch (e) {
     return res.status(400).json({ error: e.message });
   }
   saveState(state);
+  const tickets = state.pool.reduce((s, e) => s + e.entries, 0);
+  appendAudit('load_entrants', { details: `${state.pool.length} entrants, ${tickets} tickets` });
   res.json(state);
 });
 
-// Full wipe: reloads entrants.config.json AND clears winner history. The
-// spin log (appendSpinLog above) already has every past spin permanently
-// recorded and is untouched by this. The prize catalogue and current prize
-// selection are a separate concern and are left as-is.
+// Full wipe: reloads entrants.config.json AND clears winner history — and,
+// unlike Load Entrants, rotates the audit log to a freshly-dated file, so
+// each "reset" of the board starts its own clean trail rather than mixing
+// a new round's actions into the outgoing one. The old log file is left
+// exactly as it was, never overwritten. The prize catalogue and current
+// prize selection are a separate concern and are left as-is.
 app.post('/api/reset', (req, res) => {
+  let fresh;
   try {
-    state = { ...freshState(), currentPrizeId: state.currentPrizeId, prizeQueue: state.prizeQueue };
+    fresh = freshState();
   } catch (e) {
     return res.status(400).json({ error: e.message });
   }
+  const nextLogFile = newLogFileName();
+  appendAudit('reset', { details: `board and history cleared; next log file: ${nextLogFile}` });
+  state = { ...fresh, currentPrizeId: state.currentPrizeId, prizeQueue: state.prizeQueue, currentLogFile: nextLogFile };
+  ensureLogFile(nextLogFile);
   saveState(state);
   res.json(state);
 });

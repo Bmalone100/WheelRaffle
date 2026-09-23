@@ -30,6 +30,8 @@ export const resetRaffle = () => request('/reset', { method: 'POST' });
 
 export const getPrizes = () => request('/prizes');
 export const addPrize = (formData) => upload('/prizes', formData);
+export const editPrize = (id, { name, quantity, value }) =>
+  request(`/prizes/${id}`, { method: 'PATCH', body: JSON.stringify({ name, quantity, value }) });
 export const deletePrize = (id) => request(`/prizes/${id}`, { method: 'DELETE' });
 export const setCurrentPrize = (prizeId) =>
   request('/current-prize', { method: 'POST', body: JSON.stringify({ prizeId }) });
@@ -41,3 +43,11 @@ export const setPrizeMysteryEligible = (id, mysteryEligible) =>
 export const addEntrant = (entrant) => request('/entrants', { method: 'POST', body: JSON.stringify(entrant) });
 export const importEntrantsCsv = (csv) =>
   request('/entrants/import', { method: 'POST', body: JSON.stringify({ csv }) });
+export const updateEntrantEntries = (id, entries) =>
+  request(`/entrants/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify({ entries }) });
+
+export const getSettings = () => request('/settings');
+export const updateLogFolder = (logFolder) =>
+  request('/settings', { method: 'POST', body: JSON.stringify({ logFolder }) });
+export const exportLog = (logFolder) =>
+  request('/log/export', { method: 'POST', body: JSON.stringify({ logFolder }) });

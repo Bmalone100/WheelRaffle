@@ -1,17 +1,21 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import confetti from 'canvas-confetti';
-import { AlertTriangle, Settings, Users, X } from 'lucide-react';
+import { AlertTriangle, Check, Download, Settings, Users, X } from 'lucide-react';
 import SpinnerList from './components/SpinnerList.jsx';
 import EntrantSidebar from './components/EntrantSidebar.jsx';
 import AddEntrantsModal from './components/AddEntrantsModal.jsx';
 import PrizeBadge from './components/PrizeBadge.jsx';
 import PrizePicker from './components/PrizePicker.jsx';
 import WinnerHistory from './components/WinnerHistory.jsx';
+import { playSpinSound, playWinFanfare } from './lib/sound.js';
 import {
   addEntrant,
   addPrize,
   deletePrize,
+  editPrize,
+  exportLog,
   getPrizes,
+  getSettings,
   getState,
   importEntrantsCsv,
   loadEntrants,
@@ -20,6 +24,8 @@ import {
   setPrizeMysteryEligible,
   setPrizeQueue,
   spin,
+  updateEntrantEntries,
+  updateLogFolder,
 } from './api.js';
 
 const CONFETTI_COLORS = ['#5C3A7A', '#F5DEB3', '#e63946', '#43aa8b', '#277da1'];
@@ -58,6 +64,12 @@ export default function App() {
   const [currentPrizeId, setCurrentPrizeId] = useState(null);
   const [prizeQueue, setPrizeQueueState] = useState([]);
   const [prizePickerOpen, setPrizePickerOpen] = useState(false);
+  const [currentLogFile, setCurrentLogFile] = useState('');
+  const [logFolderInput, setLogFolderInput] = useState('');
+  const [logFolderSaving, setLogFolderSaving] = useState(false);
+  const [logFolderError, setLogFolderError] = useState('');
+  const [exporting, setExporting] = useState(false);
+  const [exportMessage, setExportMessage] = useState('');
   const optionsRef = useRef(null);
 
   useEffect(() => {
@@ -72,25 +84,28 @@ export default function App() {
   }, [optionsOpen]);
 
   useEffect(() => {
-    Promise.all([getState(), getPrizes()])
-      .then(([s, p]) => {
+    Promise.all([getState(), getPrizes(), getSettings()])
+      .then(([s, p, settings]) => {
         setPool(s.pool);
         setDisplayPool(s.pool);
         setHistory(s.history);
         setCurrentPrizeId(s.currentPrizeId || null);
         setPrizeQueueState(Array.isArray(s.prizeQueue) ? s.prizeQueue : []);
         setPrizes(p);
+        setLogFolderInput(settings.logFolder);
+        setCurrentLogFile(settings.currentLogFile);
       })
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
   }, []);
 
   const handleSpin = useCallback(async () => {
-    if (spinning || pool.length === 0) return;
+    if (spinning || pool.length === 0 || prizes.length === 0) return;
     setError('');
     setLastWinner(null);
     try {
       const result = await spin();
+      playSpinSound();
       setDisplayPool(result.poolBefore);
       setWinnerId(result.winner.id);
       setSpinToken((t) => t + 1);
@@ -99,7 +114,7 @@ export default function App() {
     } catch (e) {
       setError(e.message);
     }
-  }, [spinning, pool]);
+  }, [spinning, pool, prizes]);
 
   const handleSpinComplete = useCallback(() => {
     if (!pendingResult) return;
@@ -107,6 +122,7 @@ export default function App() {
     setPool(pendingResult.poolAfter);
     setHistory(pendingResult.history);
     setLastWinner(pendingResult.winner);
+    playWinFanfare(pendingResult.winner.prizeValue);
     // A specific (non-Mystery) prize may have just sold out and been
     // auto-cleared server-side, or simply had its stock decremented, and the
     // queue has advanced (or self-pruned a now-depleted entry) — stay in
@@ -141,23 +157,56 @@ export default function App() {
     if (spinning) return;
     if (
       !window.confirm(
-        'Reset the whole raffle? This wipes the current board and the winner history shown in the app, and reloads everyone fresh from entrants.config.json. Every past spin is already permanently recorded in the spin log (CSV), so nothing is actually lost — but this cannot be undone in the app itself.'
+        'Reset the whole raffle? This wipes the current board and the winner history shown in the app, and reloads everyone fresh from entrants.config.json. Every past action is already permanently recorded in the audit log, which starts a fresh dated file for this new round — the old one is kept, not overwritten. This cannot be undone in the app itself.'
       )
     ) {
       return;
     }
     setError('');
     setLastWinner(null);
+    setExportMessage('');
     try {
       const s = await resetRaffle();
       setPool(s.pool);
       setDisplayPool(s.pool);
       setHistory(s.history);
+      setCurrentLogFile(s.currentLogFile);
       setOptionsOpen(false);
     } catch (e) {
       setError(e.message);
     }
   }, [spinning]);
+
+  const handleSaveLogFolder = useCallback(async () => {
+    setLogFolderError('');
+    setExportMessage('');
+    setLogFolderSaving(true);
+    try {
+      await updateLogFolder(logFolderInput.trim());
+      setExportMessage('Export folder saved.');
+    } catch (e) {
+      setLogFolderError(e.message);
+    } finally {
+      setLogFolderSaving(false);
+    }
+  }, [logFolderInput]);
+
+  const handleExportLog = useCallback(async () => {
+    setExportMessage('');
+    setLogFolderError('');
+    setExporting(true);
+    try {
+      // Always sends whatever's currently typed, not just the last-saved
+      // value — the server persists it as the new default too, so a bare
+      // Export (without a separate Save first) still does the right thing.
+      const result = await exportLog(logFolderInput.trim());
+      setExportMessage(`Saved to ${result.path}`);
+    } catch (e) {
+      setExportMessage(e.message);
+    } finally {
+      setExporting(false);
+    }
+  }, [logFolderInput]);
 
   const handleSelectPrize = useCallback(async (prizeId) => {
     setError('');
@@ -201,6 +250,18 @@ export default function App() {
     setPrizes((prev) => [...prev, prize]);
   }, []);
 
+  const handleEditPrize = useCallback(
+    async (id, fields) => {
+      const result = await editPrize(id, fields);
+      setPrizes((prev) =>
+        result.prize.quantity > 0 ? prev.map((p) => (p.id === id ? result.prize : p)) : prev.filter((p) => p.id !== id)
+      );
+      setCurrentPrizeId(result.currentPrizeId ?? null);
+      setPrizeQueueState(Array.isArray(result.prizeQueue) ? result.prizeQueue : []);
+    },
+    []
+  );
+
   const handleSetMysteryEligible = useCallback(async (id, mysteryEligible) => {
     setError('');
     try {
@@ -236,6 +297,12 @@ export default function App() {
     setPool(result.pool);
     setDisplayPool(result.pool);
     return result;
+  }, []);
+
+  const handleEditEntries = useCallback(async (id, entries) => {
+    const result = await updateEntrantEntries(id, entries);
+    setPool(result.pool);
+    setDisplayPool(result.pool);
   }, []);
 
   const totalTickets = pool.reduce((sum, e) => sum + e.entries, 0);
@@ -309,12 +376,46 @@ export default function App() {
               Reset
             </button>
             <p className="options-hint options-hint-warning">
-              <AlertTriangle size={14} /> Wipes the current board and history. Past spins stay in the log.
+              <AlertTriangle size={14} /> Wipes the current board and history, and starts a new dated log file.
             </p>
 
-            <a className="log-link" href="/api/log" download="wheelraffle-spins.csv">
-              Download spin log (CSV)
-            </a>
+            <div className="options-log-section">
+              <h3>Audit Log</h3>
+              <p className="options-hint">
+                Every action (spins, entrant/prize changes, resets) is recorded automatically.
+              </p>
+              {currentLogFile && <p className="options-current-log">Current file: {currentLogFile}</p>}
+
+              <label className="options-field-label" htmlFor="log-folder-input">
+                Export folder
+              </label>
+              <div className="options-log-folder-row">
+                <input
+                  id="log-folder-input"
+                  type="text"
+                  className="modal-text-input"
+                  value={logFolderInput}
+                  onChange={(e) => setLogFolderInput(e.target.value)}
+                  placeholder="e.g. C:\Users\you\Desktop"
+                />
+                <button
+                  type="button"
+                  className="icon-button icon-button-small"
+                  onClick={handleSaveLogFolder}
+                  disabled={logFolderSaving}
+                  aria-label="Save export folder"
+                  title="Save export folder"
+                >
+                  <Check size={16} />
+                </button>
+              </div>
+              {logFolderError && <p className="modal-form-error">{logFolderError}</p>}
+
+              <button type="button" className="btn btn-secondary" onClick={handleExportLog} disabled={exporting}>
+                <Download size={16} /> {exporting ? 'Exporting…' : 'Export Log'}
+              </button>
+              {exportMessage && <p className="options-export-message">{exportMessage}</p>}
+            </div>
           </div>
         )}
       </div>
@@ -324,6 +425,7 @@ export default function App() {
         open={sidebarOpen}
         onClose={() => setSidebarOpen(false)}
         onAddClick={() => setAddEntrantsOpen(true)}
+        onEditEntries={handleEditEntries}
       />
 
       <AddEntrantsModal
@@ -369,9 +471,18 @@ export default function App() {
       />
 
       <div className="controls">
-        <button className="btn btn-primary" onClick={handleSpin} disabled={spinning || pool.length === 0}>
+        <button
+          className="btn btn-primary"
+          onClick={handleSpin}
+          disabled={spinning || pool.length === 0 || prizes.length === 0}
+        >
           {spinning ? 'Spinning…' : 'Spin'}
         </button>
+        {!loading && pool.length > 0 && prizes.length === 0 && (
+          <p className="spin-blocked-hint">
+            <AlertTriangle size={14} /> Add a prize before you can spin.
+          </p>
+        )}
       </div>
 
       <PrizePicker
@@ -384,6 +495,7 @@ export default function App() {
         onSelectMystery={handleSelectMystery}
         onSetQueue={handleSetQueue}
         onAdd={handleAddPrize}
+        onEdit={handleEditPrize}
         onDelete={handleDeletePrize}
         onSetMysteryEligible={handleSetMysteryEligible}
       />

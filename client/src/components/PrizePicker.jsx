@@ -1,7 +1,11 @@
 import { useState } from 'react';
-import { ChevronDown, ChevronUp, Dices, EyeOff, ImageUp, ListOrdered, ListPlus, Plus, Trash2, X } from 'lucide-react';
+import { Check, ChevronDown, ChevronUp, Dices, EyeOff, ImageUp, ListOrdered, ListPlus, Pencil, Plus, Trash2, X } from 'lucide-react';
 import FilePicker from './FilePicker.jsx';
 
+// Add and Edit share one dialog and one set of form state — they differ only
+// in whether an image is required, whether quantity may be 0, and whether
+// submit uploads a new prize or PATCHes an existing one. `formMode` is null
+// (dialog closed), 'add', or the id of the prize being edited.
 export default function PrizePicker({
   prizes,
   currentPrizeId,
@@ -12,17 +16,86 @@ export default function PrizePicker({
   onSelectMystery,
   onSetQueue,
   onAdd,
+  onEdit,
   onDelete,
   onSetMysteryEligible,
 }) {
-  const [name, setName] = useState('');
-  const [quantity, setQuantity] = useState('1');
-  const [file, setFile] = useState(null);
-  const [resetToken, setResetToken] = useState(0);
-  const [adding, setAdding] = useState(false);
-  const [error, setError] = useState('');
+  const [formMode, setFormMode] = useState(null);
+  const [formName, setFormName] = useState('');
+  const [formQuantity, setFormQuantity] = useState('1');
+  const [formValue, setFormValue] = useState('0');
+  const [formFile, setFormFile] = useState(null);
+  const [fileResetToken, setFileResetToken] = useState(0);
+  const [formSaving, setFormSaving] = useState(false);
+  const [formError, setFormError] = useState('');
 
   if (!open) return null;
+
+  const isEditing = formMode !== null && formMode !== 'add';
+
+  const openAddForm = () => {
+    setFormMode('add');
+    setFormName('');
+    setFormQuantity('1');
+    setFormValue('0');
+    setFormFile(null);
+    setFormError('');
+  };
+
+  const openEditForm = (p) => {
+    setFormMode(p.id);
+    setFormName(p.name);
+    setFormQuantity(String(p.quantity));
+    setFormValue(String(p.value ?? 0));
+    setFormError('');
+  };
+
+  const closeForm = () => {
+    if (formSaving) return;
+    setFormMode(null);
+    setFormError('');
+  };
+
+  const submitForm = async (e) => {
+    e.preventDefault();
+    const qty = Number.parseInt(formQuantity, 10);
+    const val = Number(formValue);
+    const minQty = isEditing ? 0 : 1;
+
+    if (!formName.trim() || (!isEditing && !formFile)) {
+      setFormError(isEditing ? 'Give the prize a name.' : 'Give the prize a name and pick an image.');
+      return;
+    }
+    if (!Number.isInteger(qty) || qty < minQty) {
+      setFormError(`Quantity must be a whole number of ${minQty} or more.`);
+      return;
+    }
+    if (!Number.isFinite(val) || val < 0) {
+      setFormError('Cost must be a number of 0 or more.');
+      return;
+    }
+
+    setFormError('');
+    setFormSaving(true);
+    try {
+      if (isEditing) {
+        await onEdit(formMode, { name: formName.trim(), quantity: qty, value: val });
+      } else {
+        const formData = new FormData();
+        formData.append('name', formName.trim());
+        formData.append('quantity', String(qty));
+        formData.append('value', String(val));
+        formData.append('image', formFile);
+        await onAdd(formData);
+        setFileResetToken((t) => t + 1);
+      }
+      setFormMode(null);
+    } catch (err) {
+      setFormError(err.message);
+    } finally {
+      setFormSaving(false);
+    }
+  };
 
   const noQueue = prizeQueue.length === 0;
   const mysteryQueuedCount = prizeQueue.filter((id) => id === null).length;
@@ -38,35 +111,20 @@ export default function PrizePicker({
   };
   const handleClearQueue = () => onSetQueue([]);
 
-  const handleAdd = async (e) => {
-    e.preventDefault();
-    const qty = Number.parseInt(quantity, 10);
-    if (!name.trim() || !file) {
-      setError('Give the prize a name and pick an image.');
-      return;
-    }
-    if (!Number.isInteger(qty) || qty < 1) {
-      setError('Quantity must be a whole number of at least 1.');
-      return;
-    }
-    setError('');
-    setAdding(true);
-    try {
-      const formData = new FormData();
-      formData.append('name', name.trim());
-      formData.append('quantity', String(qty));
-      formData.append('image', file);
-      await onAdd(formData);
-      setName('');
-      setQuantity('1');
-      setFile(null);
-      setResetToken((t) => t + 1);
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setAdding(false);
-    }
-  };
+  let formSubmitLabel = (
+    <>
+      <Plus size={16} /> Add Prize
+    </>
+  );
+  if (formSaving) {
+    formSubmitLabel = 'Saving…';
+  } else if (isEditing) {
+    formSubmitLabel = (
+      <>
+        <Check size={16} /> Save
+      </>
+    );
+  }
 
   return (
     <>
@@ -79,46 +137,57 @@ export default function PrizePicker({
           </button>
         </div>
 
-        {prizes.length === 0 ? (
-          <p className="prize-picker-empty">No prizes yet — add one below.</p>
-        ) : (
-          <div className="prize-grid">
-            <div className={`prize-card ${noQueue && !currentPrizeId ? 'selected' : ''}`}>
-              <button type="button" className="prize-card-select prize-card-mystery" onClick={onSelectMystery}>
-                <span className="prize-icon prize-icon-mystery">
-                  <Dices size={32} />
-                </span>
-                <span className="prize-card-name">Mystery Prize</span>
-                {mysteryQueuedCount > 0 && (
-                  <span className="prize-card-queued-badge">In queue ×{mysteryQueuedCount}</span>
-                )}
-              </button>
+        <div className="prize-grid">
+          <div className={`prize-card ${noQueue && !currentPrizeId ? 'selected' : ''}`}>
+            <button type="button" className="prize-card-select prize-card-mystery" onClick={onSelectMystery}>
+              <span className="prize-icon prize-icon-mystery">
+                <Dices size={32} />
+              </span>
+              <span className="prize-card-name">Mystery Prize</span>
+              {mysteryQueuedCount > 0 && (
+                <span className="prize-card-queued-badge">In queue ×{mysteryQueuedCount}</span>
+              )}
+            </button>
+            <div className="prize-card-actions">
               <button
                 type="button"
-                className="prize-card-queue-add"
+                className="prize-action-btn"
                 onClick={() => handleAddToQueue(null)}
                 aria-label="Add a Mystery Prize slot to the prize queue"
                 title="Add to queue"
               >
-                <ListPlus size={14} />
+                <ListPlus size={13} />
               </button>
             </div>
-            {prizes.map((p) => {
-              const queuedCount = prizeQueue.filter((id) => id === p.id).length;
-              const eligible = p.mysteryEligible !== false;
-              return (
-                <div key={p.id} className={`prize-card ${noQueue && p.id === currentPrizeId ? 'selected' : ''}`}>
-                  <button type="button" className="prize-card-select" onClick={() => onSelect(p.id)}>
-                    <span className="prize-icon-wrap">
-                      <img src={p.imageUrl} alt={p.name} className="prize-icon" />
-                      <span className="prize-qty-badge">×{p.quantity}</span>
-                    </span>
-                    <span className="prize-card-name">{p.name}</span>
-                    {queuedCount > 0 && <span className="prize-card-queued-badge">In queue ×{queuedCount}</span>}
+          </div>
+
+          {prizes.map((p) => {
+            const queuedCount = prizeQueue.filter((id) => id === p.id).length;
+            const eligible = p.mysteryEligible !== false;
+            return (
+              <div key={p.id} className={`prize-card ${noQueue && p.id === currentPrizeId ? 'selected' : ''}`}>
+                <button type="button" className="prize-card-select" onClick={() => onSelect(p.id)}>
+                  <span className="prize-icon-wrap">
+                    <img src={p.imageUrl} alt={p.name} className="prize-icon" />
+                    <span className="prize-qty-badge">×{p.quantity}</span>
+                  </span>
+                  <span className="prize-card-name">{p.name}</span>
+                  {p.value > 0 && <span className="prize-card-value">Cost: {p.value}</span>}
+                  {queuedCount > 0 && <span className="prize-card-queued-badge">In queue ×{queuedCount}</span>}
+                </button>
+                <div className="prize-card-actions">
+                  <button
+                    type="button"
+                    className="prize-action-btn"
+                    onClick={() => openEditForm(p)}
+                    aria-label={`Edit ${p.name}`}
+                    title="Edit"
+                  >
+                    <Pencil size={13} />
                   </button>
                   <button
                     type="button"
-                    className={`prize-card-mystery-toggle ${eligible ? 'eligible' : 'excluded'}`}
+                    className={`prize-action-btn ${eligible ? '' : 'prize-action-btn-muted'}`}
                     onClick={() => onSetMysteryEligible(p.id, !eligible)}
                     aria-label={
                       eligible
@@ -127,30 +196,38 @@ export default function PrizePicker({
                     }
                     title={eligible ? 'Eligible for Mystery draws — click to exclude' : 'Excluded from Mystery draws — click to allow'}
                   >
-                    {eligible ? <Dices size={12} /> : <EyeOff size={12} />}
+                    {eligible ? <Dices size={13} /> : <EyeOff size={13} />}
                   </button>
                   <button
                     type="button"
-                    className="prize-card-queue-add"
+                    className="prize-action-btn"
                     onClick={() => handleAddToQueue(p.id)}
                     aria-label={`Add ${p.name} to the prize queue`}
                     title="Add to queue"
                   >
-                    <ListPlus size={14} />
+                    <ListPlus size={13} />
                   </button>
                   <button
                     type="button"
-                    className="prize-card-delete"
+                    className="prize-action-btn prize-action-btn-danger"
                     onClick={() => onDelete(p.id)}
                     aria-label={`Delete ${p.name}`}
+                    title="Delete"
                   >
-                    <Trash2 size={14} />
+                    <Trash2 size={13} />
                   </button>
                 </div>
-              );
-            })}
-          </div>
-        )}
+              </div>
+            );
+          })}
+
+          <button type="button" className="prize-card-add" onClick={openAddForm}>
+            <span className="prize-card-add-icon">
+              <Plus size={22} />
+            </span>
+            <span className="prize-card-add-label">Add a prize</span>
+          </button>
+        </div>
 
         <div className="prize-queue-section">
           <div className="prize-queue-header">
@@ -218,47 +295,80 @@ export default function PrizePicker({
             </ol>
           )}
         </div>
-
-        <form className="modal-form" onSubmit={handleAdd}>
-          <h3>Add a prize</h3>
-          <input
-            type="text"
-            placeholder="Prize name"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            className="modal-text-input"
-          />
-          <label className="modal-field-label">
-            Quantity
-            <input
-              type="number"
-              min="1"
-              step="1"
-              value={quantity}
-              onChange={(e) => setQuantity(e.target.value)}
-              className="modal-number-input"
-            />
-          </label>
-          <FilePicker
-            accept="image/*"
-            file={file}
-            onChange={setFile}
-            placeholder="Choose a prize image…"
-            icon={<ImageUp size={16} />}
-            resetToken={resetToken}
-          />
-          {error && <p className="modal-form-error">{error}</p>}
-          <button type="submit" className="btn btn-secondary" disabled={adding}>
-            {adding ? (
-              'Adding…'
-            ) : (
-              <>
-                <Plus size={16} /> Add Prize
-              </>
-            )}
-          </button>
-        </form>
       </div>
+
+      {formMode && (
+        <>
+          <div className="modal-overlay modal-overlay-nested" onClick={closeForm} />
+          <div className="modal-panel modal-panel-nested">
+            <div className="modal-header">
+              <h2>{isEditing ? 'Edit prize' : 'Add a prize'}</h2>
+              <button
+                className="icon-button icon-button-small"
+                onClick={closeForm}
+                aria-label="Close"
+                disabled={formSaving}
+              >
+                <X size={18} />
+              </button>
+            </div>
+            <form className="modal-form modal-form-nested" onSubmit={submitForm}>
+              <input
+                type="text"
+                placeholder="Prize name"
+                value={formName}
+                onChange={(e) => setFormName(e.target.value)}
+                className="modal-text-input"
+                autoFocus
+              />
+              <div className="modal-field-row">
+                <label className="modal-field-label">
+                  Quantity
+                  <input
+                    type="number"
+                    min={isEditing ? 0 : 1}
+                    step="1"
+                    value={formQuantity}
+                    onChange={(e) => setFormQuantity(e.target.value)}
+                    className="modal-number-input"
+                  />
+                </label>
+                <label className="modal-field-label">
+                  Cost
+                  <input
+                    type="number"
+                    min="0"
+                    step="1"
+                    value={formValue}
+                    onChange={(e) => setFormValue(e.target.value)}
+                    className="modal-number-input"
+                  />
+                </label>
+              </div>
+              <p className="modal-field-hint">What this prize cost you — picks which win-fanfare tier plays.</p>
+              {!isEditing && (
+                <FilePicker
+                  accept="image/*"
+                  file={formFile}
+                  onChange={setFormFile}
+                  placeholder="Choose a prize image…"
+                  icon={<ImageUp size={16} />}
+                  resetToken={fileResetToken}
+                />
+              )}
+              {formError && <p className="modal-form-error">{formError}</p>}
+              <div className="modal-form-actions">
+                <button type="submit" className="btn btn-secondary" disabled={formSaving}>
+                  {formSubmitLabel}
+                </button>
+                <button type="button" className="btn btn-ghost" onClick={closeForm} disabled={formSaving}>
+                  Cancel
+                </button>
+              </div>
+            </form>
+          </div>
+        </>
+      )}
     </>
   );
 }
